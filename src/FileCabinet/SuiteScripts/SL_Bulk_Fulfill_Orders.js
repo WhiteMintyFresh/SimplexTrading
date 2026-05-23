@@ -1470,9 +1470,7 @@ function getOrderItemDetails(orderIds) {
             orderQty: formatDisplayNumber(orderQtyUom),
             shipQty: formatDisplayNumber(shipQtyUom),
             backOrderQty: formatDisplayNumber(backOrderQtyUom),
-            unit: result.getText({
-                name: 'unit'
-            }) || '',
+            unit: '',
             unitPrice: formatDisplayNumber(unitPrice),
             extended: formatDisplayNumber(amount),
             vendorPo: '',
@@ -1496,7 +1494,67 @@ function getOrderItemDetails(orderIds) {
         return true;
     });
 
+    populateSalesOrderLineUnits(details);
+
     return details;
+}
+function populateSalesOrderLineUnits(details) {
+    Object.keys(details || {}).forEach(orderId => {
+        try {
+            const soRec = record.load({
+                type: record.Type.SALES_ORDER,
+                id: orderId,
+                isDynamic: false
+            });
+
+            const lineCount = soRec.getLineCount({
+                sublistId: 'item'
+            });
+
+            const unitByLine = {};
+
+            for (let i = 0; i < lineCount; i++) {
+                const lineNumber = String(soRec.getSublistValue({
+                    sublistId: 'item',
+                    fieldId: 'line',
+                    line: i
+                }) || '');
+
+                const unitsText =
+                    soRec.getSublistText({
+                        sublistId: 'item',
+                        fieldId: 'units',
+                        line: i
+                    }) ||
+                    soRec.getSublistValue({
+                        sublistId: 'item',
+                        fieldId: 'units_display',
+                        line: i
+                    }) ||
+                    soRec.getSublistValue({
+                        sublistId: 'item',
+                        fieldId: 'units',
+                        line: i
+                    }) ||
+                    '';
+
+                if (lineNumber) {
+                    unitByLine[lineNumber] = unitsText;
+                }
+            }
+
+            details[orderId].forEach(line => {
+                if (line.line && unitByLine[String(line.line)]) {
+                    line.unit = unitByLine[String(line.line)];
+                }
+            });
+        } catch (e) {
+            log.error({
+                title: `Unable to load SO units for ${orderId}`,
+                details: e
+            });
+        }
+    });
 }
 function getTransactionTranId(recordType, internalId) {
     if (!internalId) {
