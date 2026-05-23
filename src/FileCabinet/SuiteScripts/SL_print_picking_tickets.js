@@ -220,7 +220,7 @@ define([
 
         form.addButton({
             id: 'custpage_customize',
-            label: 'Customize',
+            label: 'Refresh',
             functionName: 'refreshPickingTickets'
         });
     }
@@ -294,7 +294,7 @@ define([
             search.createColumn({
                 name: 'trandate',
                 summary: search.Summary.GROUP,
-                sort: search.Sort.ASC
+                sort: search.Sort.DESC
             }),
             search.createColumn({
                 name: 'tranid',
@@ -469,37 +469,44 @@ define([
     }
 
     function printPickingTickets(context) {
-        const selectedRaw = context.request.parameters[FIELD_SELECTED];
+    const selectedJson = context.request.parameters[FIELD_SELECTED] || '[]';
 
-        if (!selectedRaw) {
-            renderPickingTicketPage(context, 'Please select at least one Sales Order.');
-            return;
-        }
+    let selectedOrders;
 
-        const selectedOrders = JSON.parse(selectedRaw);
-
-        if (!selectedOrders || !selectedOrders.length) {
-            renderPickingTicketPage(context, 'Please select at least one Sales Order.');
-            return;
-        }
-
-        const salesOrderIds = selectedOrders.map(order => order.id);
-        const orderData = getPickingTicketData(salesOrderIds);
-        const logoUrl = getLogoUrl();
-
-        const xml = buildPdfSetXml(orderData, logoUrl);
-
-        const pdfFile = render.xmlToPdf({
-            xmlString: xml
-        });
-
-        pdfFile.name = 'Picking_Tickets.pdf';
-
-        context.response.writeFile({
-            file: pdfFile,
-            isInline: true
-        });
+    try {
+        selectedOrders = JSON.parse(selectedJson);
+    } catch (e) {
+        throw new Error('Unable to read selected orders.');
     }
+
+    const salesOrderIds = selectedOrders
+        .map(order => order.id)
+        .filter(id => !!id);
+
+    if (!salesOrderIds.length) {
+        throw new Error('Please select at least one order to print.');
+    }
+
+    const orders = getPickingTicketData(salesOrderIds);
+
+    if (!orders.length) {
+        throw new Error('No printable picking ticket data was found for the selected order(s).');
+    }
+
+    const logoUrl = getLogoUrl();
+    const xml = buildPdfSetXml(orders, logoUrl);
+
+    const pdfFile = render.xmlToPdf({
+        xmlString: xml
+    });
+
+    pdfFile.name = 'Picking_Tickets.pdf';
+
+    context.response.writeFile({
+        file: pdfFile,
+        isInline: true
+    });
+}
 
     function getPickingTicketData(salesOrderIds) {
         const orderMap = {};

@@ -2,15 +2,28 @@
  * @NApiVersion 2.1
  * @NScriptType ClientScript
  */
-define(['N/currentRecord'], currentRecord => {
+define([], () => {
+
+    const FIELD_ACTION = 'custpage_action';
+    const FIELD_SELECTED = 'custpage_selected_orders';
 
     function pageInit(context) {
         // Required entry point.
     }
 
-    function printPickingTickets() {
-        const rec = currentRecord.get();
+    function setFieldValue(fieldId, value) {
+        const field = document.getElementById(fieldId);
 
+        if (field) {
+            field.value = value || '';
+        }
+    }
+
+    function getMainForm() {
+        return document.forms[0];
+    }
+
+    function printPickingTickets() {
         const selectedOrders = [];
 
         document.querySelectorAll('.pt-check:checked').forEach(checkbox => {
@@ -25,17 +38,21 @@ define(['N/currentRecord'], currentRecord => {
             return;
         }
 
-        rec.setValue({
-            fieldId: 'custpage_action',
-            value: 'print'
-        });
+        setFieldValue(FIELD_ACTION, 'print');
+        setFieldValue(FIELD_SELECTED, JSON.stringify(selectedOrders));
 
-        rec.setValue({
-            fieldId: 'custpage_selected_orders',
-            value: JSON.stringify(selectedOrders)
-        });
+        const form = getMainForm();
 
-        document.forms[0].submit();
+        // Open PDF response in a new tab.
+        form.target = '_blank';
+        form.submit();
+
+        // Reset the Suitelet page so later Refresh submits normally.
+        setTimeout(() => {
+            form.target = '_self';
+            setFieldValue(FIELD_ACTION, '');
+            setFieldValue(FIELD_SELECTED, '');
+        }, 500);
     }
 
     function markAllPickingTickets() {
@@ -51,7 +68,12 @@ define(['N/currentRecord'], currentRecord => {
     }
 
     function refreshPickingTickets() {
-        document.forms[0].submit();
+        setFieldValue(FIELD_ACTION, '');
+        setFieldValue(FIELD_SELECTED, '');
+
+        const form = getMainForm();
+        form.target = '_self';
+        form.submit();
     }
 
     return {
