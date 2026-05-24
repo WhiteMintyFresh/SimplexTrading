@@ -461,7 +461,6 @@ function buildItemsTable(items) {
                 <td>${escapeHtml(line.description2)}</td>
                 <td class="center">${escapeHtml(line.orderQty)}</td>
                 <td class="center">${escapeHtml(line.shipQty)}</td>
-                <td class="center">${escapeHtml(line.backOrderQty)}</td>
                 <td>${escapeHtml(line.unit)}</td>
                 <td>${escapeHtml(line.unitPrice)}</td>
                 <td>${escapeHtml(line.extended)}</td>
@@ -483,7 +482,6 @@ function buildItemsTable(items) {
                     <th>Desc 2</th>
                     <th>Order Qty</th>
                     <th>Ship Qty</th>
-                    <th>B/O Qty</th>
                     <th>UM</th>
                     <th>Unit Price</th>
                     <th>Extended</th>
