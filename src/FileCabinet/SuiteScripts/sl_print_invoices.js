@@ -27,6 +27,8 @@ define([
 
     const FIELD_INVOICE_NUMBER = 'custpage_invoice_number';
     const FIELD_TRUCK = 'custpage_truck';
+    const FIELD_PICKER = 'custpage_picker';
+    const FIELD_ALLOW_REPRINT = 'custpage_allow_reprint';
 
     const PARAM_TEMP_FOLDER_ID = 'custscript_inv_temp_folder_id';
 
@@ -147,6 +149,18 @@ define([
             truck.defaultValue = params[FIELD_TRUCK];
         }
 
+        const picker = form.addField({
+            id: FIELD_PICKER,
+            label: 'Picker',
+            type: serverWidget.FieldType.SELECT,
+            source: 'customlist_truck_driver_list',
+            container: 'custpage_filters_left'
+        });
+
+        if (params[FIELD_PICKER]) {
+            picker.defaultValue = params[FIELD_PICKER];
+        }
+
         const rightGroup = form.addFieldGroup({
             id: 'custpage_filters_right',
             label: 'Documents in Queue'
@@ -166,6 +180,15 @@ define([
         });
 
         queueField.defaultValue = String(invoices.length);
+
+        const allowReprint = form.addField({
+            id: FIELD_ALLOW_REPRINT,
+            label: 'Allow Reprinting',
+            type: serverWidget.FieldType.CHECKBOX,
+            container: 'custpage_filters_right'
+        });
+
+        allowReprint.defaultValue = params[FIELD_ALLOW_REPRINT] === 'T' ? 'T' : 'F';
 
         form.addButton({
             id: 'custpage_search',
@@ -193,6 +216,8 @@ define([
     function searchEligibleInvoices(params) {
         const invoiceNumber = params[FIELD_INVOICE_NUMBER];
         const truckId = params[FIELD_TRUCK];
+        const pickerId = params[FIELD_PICKER];
+        const allowReprint = params[FIELD_ALLOW_REPRINT] === 'T';
 
         const filters = [
             ['type', 'anyof', 'CustInvc'],
@@ -202,7 +227,14 @@ define([
             ['memorized', 'is', 'F']
         ];
 
-        // Always allow reprinting. No tobeprinted filter is used.
+        /*
+         * Initial load:
+         * FIELD_ALLOW_REPRINT is empty, so allowReprint = false.
+         * Therefore initial load shows only invoices where To Be Printed = T.
+         */
+        if (!allowReprint) {
+            filters.push('AND', ['tobeprinted', 'is', 'T']);
+        }
 
         if (invoiceNumber) {
             filters.push('AND', ['tranid', 'contains', invoiceNumber]);
@@ -214,6 +246,15 @@ define([
                 join: 'createdFrom',
                 operator: search.Operator.ANYOF,
                 values: truckId
+            }));
+        }
+
+        if (pickerId) {
+            filters.push('AND', search.createFilter({
+                name: 'custbody_truck_driver',
+                join: 'createdFrom',
+                operator: search.Operator.ANYOF,
+                values: pickerId
             }));
         }
 
@@ -246,6 +287,10 @@ define([
             name: 'statusref'
         });
 
+        const colToBePrinted = search.createColumn({
+            name: 'tobeprinted'
+        });
+
         const colCreatedFrom = search.createColumn({
             name: 'createdfrom'
         });
@@ -273,6 +318,7 @@ define([
                 colAmount,
                 colCurrency,
                 colStatus,
+                colToBePrinted,
                 colCreatedFrom,
                 colTruck,
                 colPicker
@@ -286,6 +332,7 @@ define([
                 amount: result.getValue(colAmount) || '',
                 currency: result.getText(colCurrency) || '',
                 status: result.getText(colStatus) || '',
+                toBePrinted: result.getValue(colToBePrinted) === true || result.getValue(colToBePrinted) === 'T' ? 'Yes' : 'No',
                 salesOrder: result.getText(colCreatedFrom) || '',
                 truck: result.getText(colTruck) || '',
                 picker: result.getText(colPicker) || ''
@@ -303,7 +350,7 @@ define([
         if (!invoices.length) {
             rows = `
                 <tr>
-                    <td colspan="10" style="text-align:center;padding:8px;">
+                    <td colspan="11" style="text-align:center;padding:8px;">
                         No records to show.
                     </td>
                 </tr>
@@ -329,6 +376,7 @@ define([
                         <td>${escapeHtml(invoice.picker)}</td>
                         <td style="text-align:right;">${escapeHtml(formatAmount(invoice.amount))}</td>
                         <td>${escapeHtml(invoice.status)}</td>
+                        <td>${escapeHtml(invoice.toBePrinted)}</td>
                     </tr>
                 `;
             });
@@ -386,6 +434,7 @@ define([
                             <th style="width:130px;">Picker</th>
                             <th style="width:110px;text-align:right;">Amount</th>
                             <th style="width:120px;">Status</th>
+                            <th style="width:90px;">To Print</th>
                         </tr>
                     </thead>
                     <tbody>

@@ -9,6 +9,7 @@ define([
     'N/file',
     'N/config',
     'N/runtime',
+    'N/record',
     'N/log'
 ], (
     serverWidget,
@@ -17,18 +18,28 @@ define([
     file,
     config,
     runtime,
+    record,
     log
 ) => {
 
     const FIELD_ACTION = 'custpage_action';
     const FIELD_SELECTED = 'custpage_selected_orders';
 
-    const FIELD_ORDER_NUMBER = 'custpage_order_number';
+const FIELD_ORDER_NUMBER = 'custpage_order_number';
 const FIELD_PICKER = 'custpage_picker';
 const FIELD_TRUCK = 'custpage_truck';
+const FIELD_ALLOW_REPRINT = 'custpage_allow_reprint';
 
 const SO_FIELD_PICKER = 'custbody_truck_driver';
 const SO_FIELD_TRUCK = 'custbody_truck';
+
+const PICKER_LIST_ID = 'customlist_truck_driver_list';
+const TRUCK_LIST_ID = 'customlist_truck_fulfillment';
+
+const customListTextCache = {};
+
+// Create this Sales Order body checkbox.
+const DEFAULT_PRINTED_FIELD_ID = 'custbody_picking_ticket_printed';
 
     /*
      * Optional script parameters:
@@ -194,6 +205,15 @@ const SO_FIELD_TRUCK = 'custbody_truck';
         truckField.defaultValue = params[FIELD_TRUCK];
     }
 
+    const allowReprint = form.addField({
+        id: FIELD_ALLOW_REPRINT,
+        label: 'Allow Reprinting',
+        type: serverWidget.FieldType.CHECKBOX,
+        container: 'custpage_filter_group'
+    });
+
+    allowReprint.defaultValue = params[FIELD_ALLOW_REPRINT] === 'T' ? 'T' : 'F';
+
     form.addButton({
         id: 'custpage_refresh',
         label: 'Refresh',
@@ -274,6 +294,8 @@ function addCustomBodyFieldOptionsFromSalesOrders(options) {
     const orderNumber = params[FIELD_ORDER_NUMBER];
     const pickerId = params[FIELD_PICKER];
     const truckId = params[FIELD_TRUCK];
+    const allowReprint = params[FIELD_ALLOW_REPRINT] === 'T';
+    const printedFieldId = getPrintedFieldId();
 
     const filters = [
         ['type', 'anyof', 'SalesOrd'],
@@ -301,6 +323,10 @@ function addCustomBodyFieldOptionsFromSalesOrders(options) {
 
     if (truckId) {
         filters.push('AND', [SO_FIELD_TRUCK, 'anyof', truckId]);
+    }
+
+    if (printedFieldId && !allowReprint) {
+        filters.push('AND', [printedFieldId, 'is', 'F']);
     }
 
     const columns = [
@@ -535,111 +561,258 @@ function addCustomBodyFieldOptionsFromSalesOrders(options) {
 
     pdfFile.name = 'Picking_Tickets.pdf';
 
+    markSalesOrdersAsPrinted(salesOrderIds);
+
     context.response.writeFile({
         file: pdfFile,
         isInline: true
     });
 }
 
-    function getPickingTicketData(salesOrderIds) {
-        const orderMap = {};
+function markSalesOrdersAsPrinted(salesOrderIds) {
+    const printedFieldId = getPrintedFieldId();
 
-        salesOrderIds.forEach(id => {
-            orderMap[String(id)] = {
-                id: String(id),
-                date: '',
-                number: '',
-                customer: '',
-                shipTo: '',
-                shipVia: '',
-                location: '',
-                lines: []
-            };
-        });
-
-        const filters = [
-            ['type', 'anyof', 'SalesOrd'],
-            'AND',
-            ['internalid', 'anyof', salesOrderIds],
-            'AND',
-            ['mainline', 'is', 'F'],
-            'AND',
-            ['taxline', 'is', 'F'],
-            'AND',
-            ['shipping', 'is', 'F'],
-            'AND',
-            ['cogs', 'is', 'F'],
-            'AND',
-            ['closed', 'is', 'F'],
-            'AND',
-            ['item.type', 'noneof', ['Description', 'Discount', 'Markup', 'Subtotal']]
-        ];
-
-        const columns = [
-            search.createColumn({ name: 'internalid' }),
-            search.createColumn({ name: 'trandate' }),
-            search.createColumn({ name: 'tranid' }),
-            search.createColumn({ name: 'entity' }),
-            search.createColumn({ name: 'shipaddress' }),
-            search.createColumn({ name: 'shipmethod' }),
-            search.createColumn({ name: 'location' }),
-            search.createColumn({ name: 'line' }),
-            search.createColumn({ name: 'item' }),
-            search.createColumn({ name: 'salesdescription', join: 'item' }),
-            search.createColumn({ name: 'quantity' }),
-            search.createColumn({ name: 'quantitycommitted' }),
-            search.createColumn({ name: 'quantityshiprecv' }),
-            search.createColumn({ name: 'unit' })
-        ];
-
-        search.create({
-            type: search.Type.SALES_ORDER,
-            filters,
-            columns
-        }).run().each(result => {
-            const id = String(result.getValue({ name: 'internalid' }));
-
-            if (!orderMap[id]) {
-                return true;
-            }
-
-            const order = orderMap[id];
-
-            order.date = result.getValue({ name: 'trandate' }) || '';
-            order.number = result.getValue({ name: 'tranid' }) || '';
-            order.customer = result.getText({ name: 'entity' }) || '';
-            order.shipTo = result.getValue({ name: 'shipaddress' }) || '';
-            order.shipVia = result.getText({ name: 'shipmethod' }) || '';
-            order.location = result.getText({ name: 'location' }) || '';
-
-            const qty = toNumber(result.getValue({ name: 'quantity' }));
-            const qtyCommitted = toNumber(result.getValue({ name: 'quantitycommitted' }));
-            const qtyFulfilled = toNumber(result.getValue({ name: 'quantityshiprecv' }));
-
-            const qtyRemaining = Math.max(qty - qtyFulfilled, 0);
-            const qtyToPick = qtyCommitted > 0 ? qtyCommitted : qtyRemaining;
-
-            order.lines.push({
-                line: result.getValue({ name: 'line' }) || '',
-                item: result.getText({ name: 'item' }) || '',
-                description: result.getValue({
-                    name: 'salesdescription',
-                    join: 'item'
-                }) || '',
-                quantity: qtyRemaining,
-                committed: qtyCommitted,
-                pickQty: qtyToPick,
-                units: result.getText({ name: 'unit' }) || '',
-                location: result.getText({ name: 'location' }) || ''
-            });
-
-            return true;
-        });
-
-        return salesOrderIds
-            .map(id => orderMap[String(id)])
-            .filter(order => order && order.lines.length);
+    if (!printedFieldId) {
+        return;
     }
+
+    salesOrderIds.forEach(id => {
+        try {
+            record.submitFields({
+                type: record.Type.SALES_ORDER,
+                id: id,
+                values: {
+                    [printedFieldId]: true
+                },
+                options: {
+                    enableSourcing: false,
+                    ignoreMandatoryFields: true
+                }
+            });
+        } catch (e) {
+            log.error({
+                title: 'Unable to mark Sales Order as printed: ' + id,
+                details: e
+            });
+        }
+    });
+}
+
+    function getPickingTicketData(salesOrderIds) {
+    return salesOrderIds
+        .map(id => buildPickingTicketFromSalesOrder(id))
+        .filter(order => order && order.lines && order.lines.length);
+}
+
+function buildPickingTicketFromSalesOrder(salesOrderId) {
+    const soRec = record.load({
+        type: record.Type.SALES_ORDER,
+        id: salesOrderId,
+        isDynamic: false
+    });
+
+    const lookup = search.lookupFields({
+    type: search.Type.SALES_ORDER,
+    id: salesOrderId,
+    columns: [
+        SO_FIELD_PICKER,
+        SO_FIELD_TRUCK
+    ]
+});
+
+const order = {
+    id: String(salesOrderId),
+    date: soRec.getText({ fieldId: 'trandate' }) || soRec.getValue({ fieldId: 'trandate' }) || '',
+    number: soRec.getValue({ fieldId: 'tranid' }) || '',
+    customer: soRec.getText({ fieldId: 'entity' }) || '',
+    shipTo: cleanPdfAddress(soRec.getValue({ fieldId: 'shipaddress' }) || ''),
+    shipVia: soRec.getText({ fieldId: 'shipmethod' }) || '',
+    location: soRec.getText({ fieldId: 'location' }) || '',
+    picker: getLookupSelectText(lookup, SO_FIELD_PICKER),
+    truck: getLookupSelectText(lookup, SO_FIELD_TRUCK),
+    lines: []
+};
+
+    const lineCount = soRec.getLineCount({
+        sublistId: 'item'
+    });
+
+    for (let i = 0; i < lineCount; i++) {
+        const isClosed = soRec.getSublistValue({
+            sublistId: 'item',
+            fieldId: 'isclosed',
+            line: i
+        });
+
+        if (isClosed === true || isClosed === 'T') {
+            continue;
+        }
+
+        const itemType = soRec.getSublistValue({
+            sublistId: 'item',
+            fieldId: 'itemtype',
+            line: i
+        });
+
+        if (['Description', 'Discount', 'Markup', 'Subtotal', 'Group', 'EndGroup'].indexOf(itemType) !== -1) {
+            continue;
+        }
+
+        const code = soRec.getSublistText({
+            sublistId: 'item',
+            fieldId: 'item',
+            line: i
+        }) || '';
+
+        const description =
+            soRec.getSublistValue({
+                sublistId: 'item',
+                fieldId: 'description',
+                line: i
+            }) || '';
+
+        const quantity = toNumber(soRec.getSublistValue({
+            sublistId: 'item',
+            fieldId: 'quantity',
+            line: i
+        }));
+
+        const quantityFulfilled = toNumber(soRec.getSublistValue({
+            sublistId: 'item',
+            fieldId: 'quantityfulfilled',
+            line: i
+        }));
+
+        const quantityCommitted = toNumber(soRec.getSublistValue({
+            sublistId: 'item',
+            fieldId: 'quantitycommitted',
+            line: i
+        }));
+
+        const quantityAvailable = soRec.getSublistValue({
+            sublistId: 'item',
+            fieldId: 'quantityavailable',
+            line: i
+        });
+
+        const units = soRec.getSublistText({
+            sublistId: 'item',
+            fieldId: 'units',
+            line: i
+        }) || '';
+
+        const qtyRemaining = Math.max(quantity - quantityFulfilled, 0);
+
+        /*
+         * Use Sales Order display quantity, not base-unit quantity.
+         * This matches the XML/UI value, e.g. 200 CS instead of 4800 base units.
+         */
+        const qtyToPrint = quantityCommitted > 0 ? quantityCommitted : qtyRemaining;
+
+        order.lines.push({
+            code: code,
+            description: description,
+            quantity: qtyRemaining,
+            committed: quantityCommitted,
+            pickQty: qtyToPrint,
+            units: units,
+            onHand: quantityAvailable || '',
+            location: soRec.getSublistText({
+                sublistId: 'item',
+                fieldId: 'location',
+                line: i
+            }) || order.location
+        });
+    }
+
+    log.debug({
+    title: 'Picking Ticket Assignment Fields',
+    details: {
+        salesOrderId: salesOrderId,
+        pickerRaw: soRec.getValue({ fieldId: SO_FIELD_PICKER }),
+        truckRaw: soRec.getValue({ fieldId: SO_FIELD_TRUCK }),
+        pickerText: order.picker,
+        truckText: order.truck,
+        lookup: lookup
+    }
+});
+
+    return order;
+}
+
+function getCustomListText(listScriptId, internalId) {
+    if (!internalId) {
+        return '';
+    }
+
+    const cacheKey = listScriptId + ':' + internalId;
+
+    if (customListTextCache[cacheKey]) {
+        return customListTextCache[cacheKey];
+    }
+
+    try {
+        const results = search.create({
+            type: listScriptId,
+            filters: [
+                ['internalid', 'anyof', internalId]
+            ],
+            columns: [
+                search.createColumn({ name: 'name' })
+            ]
+        }).run().getRange({
+            start: 0,
+            end: 1
+        });
+
+        if (results && results.length) {
+            const name = results[0].getValue({ name: 'name' }) || '';
+            customListTextCache[cacheKey] = name;
+            return name;
+        }
+    } catch (e) {
+        log.error({
+            title: 'Unable to resolve custom list value',
+            details: {
+                listScriptId: listScriptId,
+                internalId: internalId,
+                error: e
+            }
+        });
+    }
+
+    return String(internalId);
+}
+
+function getLookupSelectText(lookupResult, fieldId) {
+    const value = lookupResult[fieldId];
+
+    if (!value) {
+        return '';
+    }
+
+    if (Array.isArray(value) && value.length) {
+        return value[0].text || value[0].value || '';
+    }
+
+    if (typeof value === 'object') {
+        return value.text || value.value || '';
+    }
+
+    return String(value);
+}
+
+function cleanPdfAddress(value) {
+    if (!value) {
+        return '';
+    }
+
+    return String(value)
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/\r/g, '')
+        .trim();
+}
 
     function buildPdfSetXml(orders, logoUrl) {
         let pdfs = '';
@@ -656,142 +829,284 @@ function addCustomBodyFieldOptionsFromSalesOrders(options) {
     }
 
     function buildSinglePickingTicketPdf(order, logoUrl) {
-        const lines = order.lines.map(line => `
-            <tr>
-                <td>${xmlEscape(line.item)}</td>
-                <td>${xmlEscape(line.description)}</td>
-                <td align="center">${xmlEscape(line.units)}</td>
-                <td align="right">${xmlEscape(line.pickQty)}</td>
-                <td>${xmlEscape(line.location)}</td>
-                <td align="right">${xmlEscape(line.committed)}</td>
-                <td></td>
-            </tr>
-        `).join('');
+    const lines = order.lines.map(line => `
+        <tr>
+            <td class="line-cell code-cell">${xmlEscape(line.code)}</td>
+            <td class="line-cell desc-cell">${xmlEscape(line.description)}</td>
+            <td class="line-cell qty-cell">${formatQty(line.pickQty)}</td>
+            <td class="line-cell unit-cell">${xmlEscape(line.units)}</td>
+            <td class="line-cell-last onhand-cell">${formatQty(line.onHand)}</td>
+        </tr>
+    `).join('');
 
-        const logoHtml = logoUrl
-            ? `<img src="${xmlEscape(logoUrl)}" style="width:220px;height:auto;" />`
-            : `<span style="font-size:28pt;font-weight:bold;">SIMPLEX</span>`;
+    const fillerRows = buildBlankRows(Math.max(9 - order.lines.length, 0));
 
-        return `
-            <pdf>
-                <head>
-                    <style>
-                        body {
-                            font-family: Helvetica, Arial, sans-serif;
-                            font-size: 8pt;
-                        }
+    const logoHtml = logoUrl
+    ? `<img src="${xmlEscape(logoUrl)}" style="width:125px;height:70px;object-fit:contain;" />`
+    : `<span style="font-size:22pt;font-weight:bold;color:#174f7a;">SIMPLEX</span><br/>
+       <span style="font-size:7pt;letter-spacing:1.5px;color:#666666;">TRADING CO. LTD.</span>`;
 
-                        table {
-                            width: 100%;
-                            border-collapse: collapse;
-                        }
+    return `
+        <pdf>
+            <head>
+                <style>
+                    body {
+                        font-family: Helvetica, Arial, sans-serif;
+                        font-size: 9pt;
+                        color: #222222;
+                    }
 
-                        .title {
-                            font-size: 18pt;
-                            font-weight: bold;
-                        }
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                    }
 
-                        .small {
-                            font-size: 7pt;
-                        }
+                    .date-order td {
+                        border: 0.75px solid #222222;
+                        padding: 5px;
+                    }
 
-                        .box-title {
-                            background-color: #000000;
-                            color: #ffffff;
-                            font-weight: bold;
-                            padding: 3px;
-                        }
+                    .date-order-label {
+                        font-size: 8pt;
+                        font-weight: bold;
+                    }
 
-                        .bordered {
-                            border: 0.5px solid #000000;
-                        }
+                    .date-order-value {
+                        font-size: 9pt;
+                    }
 
-                        .line-table th {
-                            background-color: #000000;
-                            color: #ffffff;
-                            font-size: 7pt;
-                            padding: 3px;
-                            border: 0.5px solid #000000;
-                        }
+                    .title-single {
+    font-size: 20pt;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-align: center;
+    white-space: nowrap;
+}
 
-                        .line-table td {
-                            font-size: 7pt;
-                            padding: 3px;
-                            border: 0.5px solid #000000;
-                        }
-                    </style>
-                </head>
+                    .ship-box {
+                        border: 0.75px solid #222222;
+                        padding: 7px;
+                        height: 95px;
+                        vertical-align: top;
+                    }
 
-                <body size="Letter" margin="0.45in">
-                    <table>
-                        <tr>
-                            <td style="width:60%;">
-                                ${logoHtml}
-                                <br/>
-                                <span class="small">
-                                    Simplex Trading Co. Ltd<br/>
-                                    St. Michael<br/>
-                                    Barbados
-                                </span>
-                            </td>
-                            <td style="width:40%;" align="right">
-                                <span class="title">Picking Ticket</span>
-                                <br/>
-                                <table style="width:170px;margin-left:auto;">
-                                    <tr>
-                                        <td class="box-title">Date</td>
-                                        <td class="box-title">Order #</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="bordered">${xmlEscape(order.date)}</td>
-                                        <td class="bordered">${xmlEscape(order.number)}</td>
-                                    </tr>
-                                </table>
-                            </td>
-                        </tr>
-                    </table>
+                    .label {
+                        font-size: 10pt;
+                        font-weight: bold;
+                    }
 
-                    <br/><br/>
+                    .address {
+                        font-size: 9pt;
+                        line-height: 12pt;
+                    }
 
-                    <table style="width:45%;">
-                        <tr>
-                            <td class="box-title">Ship To</td>
-                        </tr>
-                        <tr>
-                            <td class="bordered" style="height:55px;">
+                    .assignment-title {
+                        font-size: 10pt;
+                        font-weight: bold;
+                        text-align: center;
+                        padding-bottom: 4px;
+                    }
+
+                    .assignment-value {
+                        font-size: 10pt;
+                        text-align: center;
+                        border: 0.75px solid #222222;
+                        padding: 6px;
+                        height: 20px;
+                    }
+
+                    .line-table {
+                        width: 100%;
+                        border: 0.75px solid #222222;
+                    }
+
+                    .line-table th {
+                        border-right: 0.75px solid #222222;
+                        border-bottom: 0.75px solid #222222;
+                        padding: 6px;
+                        font-size: 10pt;
+                        font-weight: bold;
+                        text-align: left;
+                    }
+
+                    .line-table th.last-header {
+                        border-right: none;
+                    }
+
+.line-cell {
+    border-right: 0.75px solid #222222;
+    padding: 5px;
+    height: 20px;
+    vertical-align: top;
+    font-size: 9pt;
+}
+
+.line-cell-last {
+    padding: 5px;
+    height: 20px;
+    vertical-align: top;
+    font-size: 9pt;
+}
+
+.blank-cell {
+    border-right: 0.75px solid #222222;
+    padding: 5px;
+    height: 20px;
+}
+
+.blank-cell-last {
+    padding: 5px;
+    height: 20px;
+}
+
+                    .code-cell {
+                        width: 14%;
+                    }
+
+                    .desc-cell {
+                        width: 39%;
+                    }
+
+                    .qty-cell {
+                        width: 10%;
+                        text-align: right;
+                    }
+
+                    .unit-cell {
+                        width: 12%;
+                        text-align: center;
+                    }
+
+                    .onhand-cell {
+                        width: 25%;
+                        text-align: right;
+                    }
+                </style>
+            </head>
+
+            <body size="Letter" margin="0.42in">
+
+                <table>
+                    <tr>
+                        <td style="width:26%; vertical-align:top;">
+                            ${logoHtml}
+                        </td>
+
+                        <td style="width:8%;"></td>
+
+                        <td style="width:36%; vertical-align:middle; text-align:center;">
+    <span class="title-single">PICKING TICKET</span>
+</td>
+
+                        <td style="width:6%;"></td>
+
+                        <td style="width:22%; vertical-align:top;">
+                            <table class="date-order">
+                                <tr>
+                                    <td class="date-order-label">DATE</td>
+                                    <td class="date-order-label">ORDER #</td>
+                                </tr>
+                                <tr>
+                                    <td class="date-order-value">${xmlEscape(order.date)}</td>
+                                    <td class="date-order-value">${xmlEscape(order.number)}</td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+
+                <br/>
+
+                <table>
+                    <tr>
+                        <td style="width:42%;" class="ship-box">
+                            <span class="label">SHIP TO:</span><br/>
+                            <span class="address">
                                 ${xmlEscape(order.customer)}<br/>
                                 ${xmlEscape(order.shipTo).replace(/\n/g, '<br/>')}
-                            </td>
+                            </span>
+                        </td>
+
+                        <td style="width:16%;"></td>
+
+                        <td style="width:17%; vertical-align:bottom;">
+                            <table>
+                                <tr>
+                                    <td class="assignment-title">PICKER</td>
+                                </tr>
+                                <tr>
+                                    <td class="assignment-value">${xmlEscape(order.picker)}</td>
+                                </tr>
+                            </table>
+                        </td>
+
+                        <td style="width:8%;"></td>
+
+                        <td style="width:17%; vertical-align:bottom;">
+                            <table>
+                                <tr>
+                                    <td class="assignment-title">TRUCK</td>
+                                </tr>
+                                <tr>
+                                    <td class="assignment-value">${xmlEscape(order.truck)}</td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+
+                <br/>
+
+                <table class="line-table">
+                    <thead>
+                        <tr>
+                            <th style="width:14%;">CODE</th>
+                            <th style="width:39%;">DESCRIPTION</th>
+                            <th style="width:10%; text-align:right;">QTY</th>
+                            <th style="width:12%; text-align:center;">UNIT</th>
+                            <th class="last-header" style="width:25%; text-align:right;">ON HAND</th>
                         </tr>
-                    </table>
+                    </thead>
+                    <tbody>
+                        ${lines}
+                        ${fillerRows}
+                    </tbody>
+                </table>
 
-                    <br/>
+                <br/><br/>
 
-                    <table class="line-table">
-                        <thead>
-                            <tr>
-                                <th style="width:18%;">Item</th>
-                                <th style="width:34%;">Description</th>
-                                <th style="width:8%;">Units</th>
-                                <th style="width:8%;">Qty</th>
-                                <th style="width:16%;">Location Detail</th>
-                                <th style="width:8%;">Commit</th>
-                                <th style="width:8%;">Bin Num</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${lines}
-                        </tbody>
-                    </table>
+                <table style="width:150px;">
+                    <tr>
+                        <td style="text-align:center;">
+                            <barcode codetype="code128" showtext="true" value="${xmlEscape(order.number)}" />
+                        </td>
+                    </tr>
+                </table>
 
-                    <br/><br/><br/>
+            </body>
+        </pdf>
+    `;
+}
 
-                    <barcode codetype="code128" showtext="true" value="${xmlEscape(order.number)}" />
+function buildBlankRows(count) {
+    let rows = '';
 
-                </body>
-            </pdf>
+    for (let i = 0; i < count; i++) {
+        rows += `
+            <tr>
+                <td class="blank-cell">&nbsp;</td>
+                <td class="blank-cell">&nbsp;</td>
+                <td class="blank-cell">&nbsp;</td>
+                <td class="blank-cell">&nbsp;</td>
+                <td class="blank-cell-last">&nbsp;</td>
+            </tr>
         `;
     }
+
+    return rows;
+}
+
+
 
     function getLogoUrl() {
         const script = runtime.getCurrentScript();
@@ -820,10 +1135,24 @@ function addCustomBodyFieldOptionsFromSalesOrders(options) {
     }
 
     function getPrintedFieldId() {
-        return runtime.getCurrentScript().getParameter({
-            name: PARAM_PRINTED_FIELD_ID
-        }) || '';
+    return runtime.getCurrentScript().getParameter({
+        name: PARAM_PRINTED_FIELD_ID
+    }) || DEFAULT_PRINTED_FIELD_ID;
+}
+
+function formatQty(value) {
+    const numberValue = parseFloat(value);
+
+    if (isNaN(numberValue)) {
+        return value || '';
     }
+
+    if (numberValue % 1 === 0) {
+        return String(parseInt(numberValue, 10));
+    }
+
+    return String(numberValue);
+}
 
     function toNumber(value) {
         const numberValue = parseFloat(value);

@@ -459,17 +459,14 @@ function buildItemsTable(items) {
             <tr>
                 <td>${escapeHtml(line.line)}</td>
                 <td>${escapeHtml(line.item)}</td>
+                <td>${escapeHtml(line.displayName)}</td>
                 <td>${escapeHtml(line.description)}</td>
-                <td>${escapeHtml(line.description2)}</td>
                 <td class="center">${escapeHtml(line.orderQty)}</td>
                 <td class="center">${escapeHtml(line.shipQty)}</td>
                 <td>${escapeHtml(line.unit)}</td>
                 <td>${escapeHtml(line.unitPrice)}</td>
                 <td>${escapeHtml(line.extended)}</td>
-                <td>${escapeHtml(line.vendorPo)}</td>
                 <td>${escapeHtml(line.extWeight)}</td>
-                <td>${escapeHtml(line.gpPercent)}</td>
-                <td>${escapeHtml(line.unitCost)}</td>
             </tr>
         `;
     }).join('');
@@ -480,17 +477,14 @@ function buildItemsTable(items) {
                 <tr>
                     <th>Line</th>
                     <th>Item</th>
-                    <th>Desc 1</th>
-                    <th>Desc 2</th>
+                    <th>Display Name</th>
+                    <th>Description</th>
                     <th>Order Qty</th>
                     <th>Ship Qty</th>
                     <th>UM</th>
                     <th>Unit Price</th>
                     <th>Extended</th>
-                    <th>Vendor PO</th>
                     <th>Ext Weight</th>
-                    <th>GP%</th>
-                    <th>Unit Cost</th>
                 </tr>
             </thead>
             <tbody>
@@ -1352,6 +1346,10 @@ function getOrderItemDetails(orderIds) {
                 join: 'item'
             }),
             search.createColumn({
+    name: 'displayname',
+    join: 'item'
+}),
+            search.createColumn({
                 name: 'quantity'
             }),
             quantityUomColumn,
@@ -1367,12 +1365,6 @@ function getOrderItemDetails(orderIds) {
             }),
             search.createColumn({
                 name: 'amount'
-            }),
-            search.createColumn({
-                name: 'estgrossprofitpercent'
-            }),
-            search.createColumn({
-                name: 'costestimate'
             }),
             search.createColumn({
                 name: 'weight',
@@ -1443,47 +1435,41 @@ function getOrderItemDetails(orderIds) {
                 ? committedQtyUom
                 : Math.max(orderQtyUom - fulfilledQtyUom, 0);
 
-        const backOrderQtyUom = Math.max(
-            orderQtyUom - fulfilledQtyUom - committedQtyUom,
-            0
-        );
-
         const unitPrice =
             orderQtyUom
                 ? amount / orderQtyUom
                 : 0;
 
-        const line = {
-            line: result.getValue({
-                name: 'line'
-            }),
-            item: result.getText({
-                name: 'item'
-            }) || '',
-            description: result.getValue({
-                name: 'memo'
-            }) || '',
-            description2: result.getValue({
-                name: 'salesdescription',
-                join: 'item'
-            }) || '',
-            orderQty: formatDisplayNumber(orderQtyUom),
-            shipQty: formatDisplayNumber(shipQtyUom),
-            backOrderQty: formatDisplayNumber(backOrderQtyUom),
-            unit: '',
-            unitPrice: formatDisplayNumber(unitPrice),
-            extended: formatDisplayNumber(amount),
-            vendorPo: '',
-            extWeight: itemWeight && shipQtyUom
-                ? formatDisplayNumber(itemWeight * (shipQtyUom * conversionRate))
-                : '',
-            gpPercent: result.getValue({
-                name: 'estgrossprofitpercent'
-            }) || '',
-            unitCost: result.getValue({
-                name: 'costestimate'
-            }) || ''
-        };
+        const salesOrderDescription = result.getValue({
+    name: 'memo'
+}) || '';
+
+const itemSalesDescription = result.getValue({
+    name: 'salesdescription',
+    join: 'item'
+}) || '';
+
+const line = {
+    line: result.getValue({
+        name: 'line'
+    }),
+    item: result.getText({
+        name: 'item'
+    }) || '',
+    displayName: result.getValue({
+        name: 'displayname',
+        join: 'item'
+    }) || '',
+    description: salesOrderDescription || itemSalesDescription,
+    orderQty: formatDisplayNumber(orderQtyUom),
+    shipQty: formatDisplayNumber(shipQtyUom),
+    unit: '',
+    unitPrice: formatDisplayNumber(unitPrice),
+    extended: formatDisplayNumber(amount),
+    extWeight: itemWeight && shipQtyUom
+        ? formatDisplayNumber(itemWeight * (shipQtyUom * conversionRate))
+        : ''
+};
 
         if (!details[orderId]) {
             details[orderId] = [];
