@@ -25,9 +25,8 @@ define([
     const FIELD_ACTION = 'custpage_action';
     const FIELD_SELECTED = 'custpage_selected_invoices';
 
-    const FIELD_LOCATION = 'custpage_location';
-    const FIELD_FORM = 'custpage_form';
-    const FIELD_ALLOW_REPRINT = 'custpage_allow_reprint';
+    const FIELD_INVOICE_NUMBER = 'custpage_invoice_number';
+    const FIELD_TRUCK = 'custpage_truck';
 
     const PARAM_TEMP_FOLDER_ID = 'custscript_inv_temp_folder_id';
 
@@ -127,34 +126,25 @@ define([
             label: 'Filter By'
         });
 
-        const location = form.addField({
-            id: FIELD_LOCATION,
-            label: 'Location',
-            type: serverWidget.FieldType.SELECT,
-            source: 'location',
+        const invoiceNumber = form.addField({
+            id: FIELD_INVOICE_NUMBER,
+            label: 'Invoice Number',
+            type: serverWidget.FieldType.TEXT,
             container: 'custpage_filters_left'
         });
 
-        if (params[FIELD_LOCATION]) {
-            location.defaultValue = params[FIELD_LOCATION];
-        }
+        invoiceNumber.defaultValue = params[FIELD_INVOICE_NUMBER] || '';
 
-        const formField = form.addField({
-            id: FIELD_FORM,
-            label: 'Form',
+        const truck = form.addField({
+            id: FIELD_TRUCK,
+            label: 'Truck',
             type: serverWidget.FieldType.SELECT,
+            source: 'customlist_truck_fulfillment',
             container: 'custpage_filters_left'
         });
 
-        formField.addSelectOption({
-            value: '',
-            text: '- From Transaction -'
-        });
-
-        addInvoiceForms(formField);
-
-        if (params[FIELD_FORM]) {
-            formField.defaultValue = params[FIELD_FORM];
+        if (params[FIELD_TRUCK]) {
+            truck.defaultValue = params[FIELD_TRUCK];
         }
 
         const rightGroup = form.addFieldGroup({
@@ -177,49 +167,11 @@ define([
 
         queueField.defaultValue = String(invoices.length);
 
-        const allowReprint = form.addField({
-            id: FIELD_ALLOW_REPRINT,
-            label: 'Allow Reprinting',
-            type: serverWidget.FieldType.CHECKBOX,
-            container: 'custpage_filters_right'
-        });
-
-        allowReprint.defaultValue = params[FIELD_ALLOW_REPRINT] === 'T' ? 'T' : 'F';
-
         form.addButton({
-            id: 'custpage_customize',
-            label: 'Customize',
+            id: 'custpage_search',
+            label: 'Search',
             functionName: 'refreshInvoices'
         });
-    }
-
-    function addInvoiceForms(formField) {
-        try {
-            search.create({
-                type: 'customtransactionform',
-                filters: [
-                    ['recordtype', 'is', 'CustInvc'],
-                    'AND',
-                    ['isinactive', 'is', 'F']
-                ],
-                columns: [
-                    search.createColumn({ name: 'name' }),
-                    search.createColumn({ name: 'internalid' })
-                ]
-            }).run().each(result => {
-                formField.addSelectOption({
-                    value: result.getValue({ name: 'internalid' }),
-                    text: result.getValue({ name: 'name' })
-                });
-
-                return true;
-            });
-        } catch (e) {
-            log.audit({
-                title: 'Invoice Forms Could Not Be Loaded',
-                details: e
-            });
-        }
     }
 
     function addResultsTable(form, params) {
@@ -239,8 +191,8 @@ define([
     }
 
     function searchEligibleInvoices(params) {
-        const locationId = params[FIELD_LOCATION];
-        const allowReprint = params[FIELD_ALLOW_REPRINT] === 'T';
+        const invoiceNumber = params[FIELD_INVOICE_NUMBER];
+        const truckId = params[FIELD_TRUCK];
 
         const filters = [
             ['type', 'anyof', 'CustInvc'],
@@ -250,13 +202,63 @@ define([
             ['memorized', 'is', 'F']
         ];
 
-        if (!allowReprint) {
-            filters.push('AND', ['tobeprinted', 'is', 'T']);
+        // Always allow reprinting. No tobeprinted filter is used.
+
+        if (invoiceNumber) {
+            filters.push('AND', ['tranid', 'contains', invoiceNumber]);
         }
 
-        if (locationId) {
-            filters.push('AND', ['location', 'anyof', locationId]);
+        if (truckId) {
+            filters.push('AND', search.createFilter({
+                name: 'custbody_truck',
+                join: 'createdFrom',
+                operator: search.Operator.ANYOF,
+                values: truckId
+            }));
         }
+
+        const colDate = search.createColumn({
+            name: 'trandate',
+            sort: search.Sort.DESC
+        });
+
+        const colTranId = search.createColumn({
+            name: 'tranid'
+        });
+
+        const colInternalId = search.createColumn({
+            name: 'internalid'
+        });
+
+        const colEntity = search.createColumn({
+            name: 'entity'
+        });
+
+        const colAmount = search.createColumn({
+            name: 'amount'
+        });
+
+        const colCurrency = search.createColumn({
+            name: 'currency'
+        });
+
+        const colStatus = search.createColumn({
+            name: 'statusref'
+        });
+
+        const colCreatedFrom = search.createColumn({
+            name: 'createdfrom'
+        });
+
+        const colTruck = search.createColumn({
+            name: 'custbody_truck',
+            join: 'createdFrom'
+        });
+
+        const colPicker = search.createColumn({
+            name: 'custbody_truck_driver',
+            join: 'createdFrom'
+        });
 
         const invoices = [];
 
@@ -264,23 +266,29 @@ define([
             type: search.Type.INVOICE,
             filters,
             columns: [
-                search.createColumn({ name: 'trandate', sort: search.Sort.ASC }),
-                search.createColumn({ name: 'tranid' }),
-                search.createColumn({ name: 'internalid' }),
-                search.createColumn({ name: 'entity' }),
-                search.createColumn({ name: 'amount' }),
-                search.createColumn({ name: 'currency' }),
-                search.createColumn({ name: 'statusref' })
+                colDate,
+                colTranId,
+                colInternalId,
+                colEntity,
+                colAmount,
+                colCurrency,
+                colStatus,
+                colCreatedFrom,
+                colTruck,
+                colPicker
             ]
         }).run().each(result => {
             invoices.push({
-                id: result.getValue({ name: 'internalid' }) || '',
-                date: result.getValue({ name: 'trandate' }) || '',
-                number: result.getValue({ name: 'tranid' }) || '',
-                customer: result.getText({ name: 'entity' }) || '',
-                amount: result.getValue({ name: 'amount' }) || '',
-                currency: result.getText({ name: 'currency' }) || '',
-                status: result.getText({ name: 'statusref' }) || ''
+                id: result.getValue(colInternalId) || '',
+                date: result.getValue(colDate) || '',
+                number: result.getValue(colTranId) || '',
+                customer: result.getText(colEntity) || '',
+                amount: result.getValue(colAmount) || '',
+                currency: result.getText(colCurrency) || '',
+                status: result.getText(colStatus) || '',
+                salesOrder: result.getText(colCreatedFrom) || '',
+                truck: result.getText(colTruck) || '',
+                picker: result.getText(colPicker) || ''
             });
 
             return invoices.length < 1000;
@@ -295,7 +303,7 @@ define([
         if (!invoices.length) {
             rows = `
                 <tr>
-                    <td colspan="8" style="text-align:center;padding:8px;">
+                    <td colspan="10" style="text-align:center;padding:8px;">
                         No records to show.
                     </td>
                 </tr>
@@ -316,8 +324,10 @@ define([
                         <td>${escapeHtml(invoice.number)}</td>
                         <td>${escapeHtml(invoice.id)}</td>
                         <td>${escapeHtml(invoice.customer)}</td>
+                        <td>${escapeHtml(invoice.salesOrder)}</td>
+                        <td>${escapeHtml(invoice.truck)}</td>
+                        <td>${escapeHtml(invoice.picker)}</td>
                         <td style="text-align:right;">${escapeHtml(formatAmount(invoice.amount))}</td>
-                        <td>${escapeHtml(invoice.currency)}</td>
                         <td>${escapeHtml(invoice.status)}</td>
                     </tr>
                 `;
@@ -367,13 +377,15 @@ define([
                     <thead>
                         <tr>
                             <th style="width:50px;text-align:center;">Print</th>
-                            <th style="width:100px;">Date</th>
+                            <th style="width:90px;">Date</th>
                             <th style="width:120px;">Number</th>
-                            <th style="width:80px;">ID</th>
+                            <th style="width:70px;">ID</th>
                             <th>Customer</th>
-                            <th style="width:120px;text-align:right;">Amount</th>
-                            <th style="width:110px;">Currency</th>
-                            <th style="width:140px;">Status</th>
+                            <th style="width:130px;">Sales Order</th>
+                            <th style="width:130px;">Truck</th>
+                            <th style="width:130px;">Picker</th>
+                            <th style="width:110px;text-align:right;">Amount</th>
+                            <th style="width:120px;">Status</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -415,15 +427,13 @@ define([
             return;
         }
 
-        const formId = params[FIELD_FORM] ? Number(params[FIELD_FORM]) : null;
-
         let pdfFile;
 
         if (invoiceIds.length === 1) {
-            pdfFile = renderSingleInvoice(invoiceIds[0], formId);
+            pdfFile = renderSingleInvoice(invoiceIds[0]);
             pdfFile.name = `Invoice_${selectedInvoices[0].number || invoiceIds[0]}.pdf`;
         } else {
-            pdfFile = renderMultipleInvoices(invoiceIds, formId);
+            pdfFile = renderMultipleInvoices(invoiceIds);
             pdfFile.name = 'Invoices.pdf';
         }
 
@@ -435,21 +445,15 @@ define([
         });
     }
 
-    function renderSingleInvoice(invoiceId, formId) {
-        const options = {
+    function renderSingleInvoice(invoiceId) {
+        return render.transaction({
             entityId: invoiceId,
             printMode: render.PrintMode.PDF,
             inCustLocale: true
-        };
-
-        if (formId) {
-            options.formId = formId;
-        }
-
-        return render.transaction(options);
+        });
     }
 
-    function renderMultipleInvoices(invoiceIds, formId) {
+    function renderMultipleInvoices(invoiceIds) {
         const tempFolderId = runtime.getCurrentScript().getParameter({
             name: PARAM_TEMP_FOLDER_ID
         });
@@ -467,7 +471,7 @@ define([
 
         try {
             invoiceIds.forEach(invoiceId => {
-                const invoicePdf = renderSingleInvoice(invoiceId, formId);
+                const invoicePdf = renderSingleInvoice(invoiceId);
 
                 invoicePdf.name = `Invoice_${invoiceId}.pdf`;
                 invoicePdf.folder = Number(tempFolderId);
@@ -558,7 +562,6 @@ define([
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
-            
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
     }

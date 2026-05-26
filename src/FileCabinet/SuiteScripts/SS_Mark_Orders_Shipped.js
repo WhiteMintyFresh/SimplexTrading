@@ -13,7 +13,7 @@ define([
 ) => {
 
     const RECORD_STATUS_SHIPPED = 'C';
-    const PARAM_PAYLOAD = 'custscript_mos_payload';
+    const PARAM_PAYLOAD = 'custscript_mop_payload';
 
     function execute() {
         const script = runtime.getCurrentScript();

@@ -35,7 +35,22 @@ define(['N/currentRecord'], currentRecord => {
             value: JSON.stringify(selectedInvoices)
         });
 
-        document.forms[0].submit();
+        const form = document.forms[0];
+
+        // Open the Suitelet POST response PDF in a new browser tab.
+        form.target = '_blank';
+
+        form.submit();
+
+        // Reset the target so future refresh/search actions stay on the same tab.
+        setTimeout(() => {
+            form.target = '_self';
+
+            rec.setValue({
+                fieldId: 'custpage_action',
+                value: ''
+            });
+        }, 500);
     }
 
     function markAllInvoices() {
@@ -58,7 +73,9 @@ define(['N/currentRecord'], currentRecord => {
             value: ''
         });
 
-        document.forms[0].submit();
+        const form = document.forms[0];
+        form.target = '_self';
+        form.submit();
     }
 
     return {

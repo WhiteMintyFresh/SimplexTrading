@@ -23,11 +23,11 @@ define([
     const SEARCH_STATUS_PACKED = 'ItemShip:B';
     const RECORD_STATUS_SHIPPED = 'C';
 
-    const PARAM_SCHEDULED_SCRIPT_ID = 'custscript_mos_sched_script_id';
-    const PARAM_SCHEDULED_DEPLOY_ID = 'custscript_mos_sched_deploy_id';
-    const PARAM_SYNC_LIMIT = 'custscript_mos_sync_limit';
+    const PARAM_SCHEDULED_SCRIPT_ID = 'custscript_mop_sched_script_id';
+    const PARAM_SCHEDULED_DEPLOY_ID = 'custscript_mop_sched_deploy_id';
+    const PARAM_SYNC_LIMIT = 'custscript_mop_sync_limit';
 
-    const SCHED_PARAM_PAYLOAD = 'custscript_mos_payload';
+    const SCHED_PARAM_PAYLOAD = 'custscript_mop_payload';
 
     function onRequest(context) {
         if (context.request.method === 'GET') {
@@ -90,6 +90,7 @@ define([
 
         html.defaultValue = `
             <div style="margin:8px 0 12px 0;">
+                <button type="button" onclick="refreshShippedFilters()">Refresh</button>
                 <button type="button" onclick="markAllShippedRows()">Mark All</button>
                 <button type="button" onclick="unmarkAllShippedRows()">Unmark All</button>
             </div>
@@ -102,45 +103,6 @@ define([
             label: 'Filters'
         });
 
-        const customer = form.addField({
-            id: 'custpage_customer',
-            label: 'Customer',
-            type: serverWidget.FieldType.SELECT,
-            source: 'customer',
-            container: 'custpage_filters'
-        });
-        customer.defaultValue = params.custpage_customer || '';
-
-        const orderType = form.addField({
-            id: 'custpage_ordertype',
-            label: 'Order Type',
-            type: serverWidget.FieldType.SELECT,
-            container: 'custpage_filters'
-        });
-
-        orderType.addSelectOption({ value: '', text: '' });
-        orderType.addSelectOption({ value: 'SalesOrd', text: 'Sales Order' });
-        orderType.addSelectOption({ value: 'TrnfrOrd', text: 'Transfer Order' });
-        orderType.defaultValue = params.custpage_ordertype || '';
-
-        const location = form.addField({
-            id: 'custpage_location',
-            label: 'Bulk Fulfill From Location',
-            type: serverWidget.FieldType.SELECT,
-            source: 'location',
-            container: 'custpage_filters'
-        });
-        location.defaultValue = params.custpage_location || '';
-
-        const shipVia = form.addField({
-            id: 'custpage_shipvia',
-            label: 'Ship Via',
-            type: serverWidget.FieldType.SELECT,
-            source: 'shipitem',
-            container: 'custpage_filters'
-        });
-        shipVia.defaultValue = params.custpage_shipvia || '';
-
         const orderNumber = form.addField({
             id: 'custpage_ordernumber',
             label: 'Select Order Number',
@@ -148,6 +110,32 @@ define([
             container: 'custpage_filters'
         });
         orderNumber.defaultValue = params.custpage_ordernumber || '';
+
+        const fulfillmentNumber = form.addField({
+            id: 'custpage_fulfillmentnumber',
+            label: 'Fulfillment #',
+            type: serverWidget.FieldType.TEXT,
+            container: 'custpage_filters'
+        });
+        fulfillmentNumber.defaultValue = params.custpage_fulfillmentnumber || '';
+
+        const picker = form.addField({
+            id: 'custpage_picker',
+            label: 'Picker',
+            type: serverWidget.FieldType.SELECT,
+            source: 'customlist_truck_driver_list',
+            container: 'custpage_filters'
+        });
+        picker.defaultValue = params.custpage_picker || '';
+
+        const truck = form.addField({
+            id: 'custpage_truck',
+            label: 'Truck',
+            type: serverWidget.FieldType.SELECT,
+            source: 'customlist_truck_fulfillment',
+            container: 'custpage_filters'
+        });
+        truck.defaultValue = params.custpage_truck || '';
     }
 
     function addFulfillmentTable(form, params) {
@@ -175,26 +163,46 @@ define([
             ['status', 'anyof', SEARCH_STATUS_PACKED]
         ];
 
-        if (params.custpage_customer) {
-            filters.push('AND', ['entity', 'anyof', params.custpage_customer]);
+        if (params.custpage_fulfillmentnumber) {
+            filters.push(
+                'AND',
+                ['tranid', 'contains', params.custpage_fulfillmentnumber]
+            );
         }
 
-        if (params.custpage_location) {
-            filters.push('AND', ['location', 'anyof', params.custpage_location]);
+        if (params.custpage_picker) {
+            filters.push(
+                'AND',
+                ['custbody_truck_driver', 'anyof', params.custpage_picker]
+            );
         }
 
-        if (params.custpage_shipvia) {
-            filters.push('AND', ['shipmethod', 'anyof', params.custpage_shipvia]);
+        if (params.custpage_truck) {
+            filters.push(
+                'AND',
+                ['custbody_truck', 'anyof', params.custpage_truck]
+            );
         }
+        log.debug({
+    title: 'Mark Orders Shipped Filters',
+    details: JSON.stringify({
+        orderNumber: params.custpage_ordernumber,
+        fulfillmentNumber: params.custpage_fulfillmentnumber,
+        picker: params.custpage_picker,
+        truck: params.custpage_truck
+    })
+});
 
         const columns = [
-            search.createColumn({ name: 'trandate', sort: search.Sort.ASC }),
+            search.createColumn({ name: 'trandate', sort: search.Sort.DESC }),
             search.createColumn({ name: 'tranid' }),
             search.createColumn({ name: 'createdfrom' }),
             search.createColumn({ name: 'entity' }),
             search.createColumn({ name: 'shipmethod' }),
             search.createColumn({ name: 'location' }),
             search.createColumn({ name: 'trackingnumbers' }),
+            search.createColumn({ name: 'custbody_truck_driver' }),
+            search.createColumn({ name: 'custbody_truck' }),
             search.createColumn({ name: 'type', join: 'createdFrom' }),
             search.createColumn({ name: 'tranid', join: 'createdFrom' })
         ];
@@ -212,31 +220,13 @@ define([
         });
 
         paged.pageRanges.slice(0, 1).forEach(pageRange => {
-            const page = paged.fetch({
-                index: pageRange.index
-            });
+            const page = paged.fetch({ index: pageRange.index });
 
             page.data.forEach(result => {
                 const orderNumber = result.getValue({
                     name: 'tranid',
                     join: 'createdFrom'
                 }) || '';
-
-                const orderTypeValue = result.getValue({
-                    name: 'type',
-                    join: 'createdFrom'
-                }) || '';
-
-                const orderTypeText = result.getText({
-                    name: 'type',
-                    join: 'createdFrom'
-                }) || '';
-
-                if (params.custpage_ordertype) {
-                    if (orderTypeValue !== params.custpage_ordertype) {
-                        return;
-                    }
-                }
 
                 if (params.custpage_ordernumber) {
                     const needle = String(params.custpage_ordernumber).toLowerCase();
@@ -249,15 +239,20 @@ define([
 
                 results.push({
                     id: result.id,
-                    date: result.getValue({ name: 'trandate' }) || '',
-                    fulfillmentNumber: result.getValue({ name: 'tranid' }) || '',
-                    orderNumber,
-                    orderTypeValue,
-                    orderTypeText,
-                    customer: result.getText({ name: 'entity' }) || '',
-                    shipVia: result.getText({ name: 'shipmethod' }) || '',
-                    location: result.getText({ name: 'location' }) || '',
-                    trackingNumbers: result.getValue({ name: 'trackingnumbers' }) || ''
+                    date: result.getValue('trandate') || '',
+                    fulfillmentNumber: result.getValue('tranid') || '',
+                    orderId: result.getValue('createdfrom') || '',
+                    orderText: result.getText('createdfrom') || orderNumber,
+                    orderType: result.getText({
+                        name: 'type',
+                        join: 'createdFrom'
+                    }) || '',
+                    customer: result.getText('entity') || '',
+                    shipMethod: result.getText('shipmethod') || '',
+                    location: result.getText('location') || '',
+                    picker: result.getText('custbody_truck_driver') || '',
+                    truck: result.getText('custbody_truck') || '',
+                    tracking: result.getValue('trackingnumbers') || ''
                 });
             });
         });
@@ -265,69 +260,94 @@ define([
         return results;
     }
 
-    function buildTableHtml(fulfillments) {
+    function buildTableHtml(rows) {
         let rowsHtml = '';
 
-        if (!fulfillments.length) {
+        if (!rows.length) {
             rowsHtml = `
                 <tr>
-                    <td colspan="10" style="padding:10px;text-align:center;">
-                        No packed fulfillments found.
+                    <td colspan="12" style="text-align:center;padding:14px;">
+                        No packed item fulfillments found.
                     </td>
                 </tr>
             `;
         } else {
-            rowsHtml = fulfillments.map(line => {
-                const ifId = escapeHtml(line.id);
-
-                return `
-                    <tr>
-                        <td style="text-align:center;">
-                            <input 
-                                type="checkbox" 
-                                class="ship-check" 
-                                data-ifid="${ifId}" 
-                            />
+            rows.forEach(row => {
+                rowsHtml += `
+                    <tr data-ifid="${escapeHtml(row.id)}">
+                        <td class="center">
+                            <input type="checkbox" class="ship-check" data-ifid="${escapeHtml(row.id)}">
                         </td>
-                        <td>${escapeHtml(line.date)}</td>
-                        <td>${escapeHtml(line.fulfillmentNumber)}</td>
-                        <td>${escapeHtml(line.orderTypeText)}</td>
-                        <td>${escapeHtml(line.orderNumber)}</td>
-                        <td>${escapeHtml(line.customer)}</td>
-                        <td>${escapeHtml(line.shipVia)}</td>
-                        <td>${escapeHtml(line.location)}</td>
+                        <td>${escapeHtml(row.date)}</td>
+                        <td>${escapeHtml(row.fulfillmentNumber)}</td>
+                        <td>${escapeHtml(row.orderType)}</td>
+                        <td>${escapeHtml(row.orderText)}</td>
+                        <td>${escapeHtml(row.customer)}</td>
+                        <td>${escapeHtml(row.shipMethod)}</td>
+                        <td>${escapeHtml(row.location)}</td>
+                        <td>${escapeHtml(row.picker)}</td>
+                        <td>${escapeHtml(row.truck)}</td>
                         <td>
-                            <input 
-                                type="text" 
-                                class="ship-weight" 
-                                data-ifid="${ifId}" 
-                                style="width:90px;" 
-                            />
+                            <input type="text" class="ship-weight" data-ifid="${escapeHtml(row.id)}" style="width:120px;">
                         </td>
                         <td>
-                            <input 
-                                type="text" 
-                                class="ship-tracking" 
-                                data-ifid="${ifId}" 
-                                value="${escapeHtml(line.trackingNumbers)}"
-                                style="width:180px;" 
-                            />
+                            <input type="text" class="ship-tracking" data-ifid="${escapeHtml(row.id)}" value="${escapeHtml(row.tracking)}" style="width:180px;">
                         </td>
                     </tr>
                 `;
-            }).join('');
+            });
         }
 
         return `
-            <div style="margin-top:12px;">
-                <div style="margin-bottom:8px;">
-                    Showing first ${PAGE_SIZE} packed fulfillment(s).
-                </div>
+            <style>
+                .shipped-page {
+                    width: calc(100vw - 40px);
+                    margin-top: 10px;
+                    font-family: Arial, Helvetica, sans-serif;
+                }
 
-                <div style="overflow-x:auto;">
-                    <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;width:100%;">
+                .shipped-table-wrapper {
+                    width: 100%;
+                    overflow-x: auto;
+                    border: 1px solid #d7d7d7;
+                    background: #fff;
+                }
+
+                .shipped-table {
+                    width: 100%;
+                    min-width: 1350px;
+                    border-collapse: collapse;
+                    font-size: 12px;
+                }
+
+                .shipped-table th {
+                    background: #f5f5f5;
+                    border: 1px solid #d0d0d0;
+                    padding: 6px;
+                    text-align: left;
+                    white-space: nowrap;
+                }
+
+                .shipped-table td {
+                    border: 1px solid #e1e1e1;
+                    padding: 5px;
+                    white-space: nowrap;
+                }
+
+                .shipped-table tr:hover td {
+                    background: #eef6fb;
+                }
+
+                .center {
+                    text-align: center;
+                }
+            </style>
+
+            <div class="shipped-page">
+                <div class="shipped-table-wrapper">
+                    <table class="shipped-table">
                         <thead>
-                            <tr style="background:#f0f0f0;">
+                            <tr>
                                 <th>Ship</th>
                                 <th>Date</th>
                                 <th>Fulfillment #</th>
@@ -336,6 +356,8 @@ define([
                                 <th>Customer Name</th>
                                 <th>Ship Method</th>
                                 <th>Location</th>
+                                <th>Picker</th>
+                                <th>Truck</th>
                                 <th>Weight (lbs)</th>
                                 <th>Tracking Number</th>
                             </tr>
@@ -360,6 +382,71 @@ define([
                     });
                 }
 
+                function refreshShippedFilters() {
+    var currentUrl = new URL(window.location.href);
+
+    currentUrl.searchParams.delete('custpage_ordernumber');
+    currentUrl.searchParams.delete('custpage_fulfillmentnumber');
+    currentUrl.searchParams.delete('custpage_picker');
+    currentUrl.searchParams.delete('custpage_truck');
+
+    var orderNumber = getNsFieldValue('custpage_ordernumber');
+    var fulfillmentNumber = getNsFieldValue('custpage_fulfillmentnumber');
+    var picker = getNsFieldValue('custpage_picker');
+    var truck = getNsFieldValue('custpage_truck');
+
+    if (orderNumber) {
+        currentUrl.searchParams.set('custpage_ordernumber', orderNumber);
+    }
+
+    if (fulfillmentNumber) {
+        currentUrl.searchParams.set('custpage_fulfillmentnumber', fulfillmentNumber);
+    }
+
+    if (picker) {
+        currentUrl.searchParams.set('custpage_picker', picker);
+    }
+
+    if (truck) {
+        currentUrl.searchParams.set('custpage_truck', truck);
+    }
+
+    window.location.href = currentUrl.toString();
+}
+
+function getNsFieldValue(fieldId) {
+    try {
+        if (typeof nlapiGetFieldValue === 'function') {
+            var nlapiValue = nlapiGetFieldValue(fieldId);
+            if (nlapiValue) {
+                return nlapiValue;
+            }
+        }
+    } catch (e) {}
+
+    var byId = document.getElementById(fieldId);
+    if (byId && byId.value) {
+        return byId.value;
+    }
+
+    var byName = document.getElementsByName(fieldId);
+    if (byName && byName.length && byName[0].value) {
+        return byName[0].value;
+    }
+
+    var hiddenInput = document.querySelector('input[name="' + fieldId + '"]');
+    if (hiddenInput && hiddenInput.value) {
+        return hiddenInput.value;
+    }
+
+    var selectInput = document.querySelector('select[name="' + fieldId + '"]');
+    if (selectInput && selectInput.value) {
+        return selectInput.value;
+    }
+
+    return '';
+}
+
                 document.addEventListener('submit', function() {
                     var payload = [];
 
@@ -377,7 +464,6 @@ define([
                     });
 
                     var payloadField = document.getElementById('custpage_ship_payload');
-
                     if (payloadField) {
                         payloadField.value = JSON.stringify(payload);
                     }
@@ -422,7 +508,7 @@ define([
             if (!scheduledScriptId || !scheduledDeploymentId) {
                 renderForm(
                     context,
-                    `Selected ${payload.length} fulfillment(s), but the scheduled script parameters are not configured.`
+                    `Selected ${payload.length} fulfillments, but the scheduled script parameters are not configured.`
                 );
                 return;
             }
@@ -440,7 +526,7 @@ define([
 
             renderForm(
                 context,
-                `Submitted ${payload.length} fulfillment(s) for background shipping. Task ID: ${taskId}`
+                `Submitted ${payload.length} fulfillments for background shipping. Task ID: ${taskId}`
             );
 
             return;
@@ -483,16 +569,13 @@ define([
                 failed++;
 
                 log.error({
-                    title: `Failed to mark fulfillment shipped: ${line.fulfillmentId}`,
+                    title: `Failed to ship fulfillment ${line.fulfillmentId}`,
                     details: e
                 });
             }
         });
 
-        return {
-            success,
-            failed
-        };
+        return { success, failed };
     }
 
     function updatePackageInfoIfNeeded(fulfillmentId, weight, trackingNumber) {
@@ -544,7 +627,7 @@ define([
                 updated = true;
                 break;
             } catch (e) {
-                // Ignore unavailable package sublists.
+                // Not every account/carrier uses every package sublist.
             }
         }
 
@@ -565,7 +648,7 @@ define([
                 value
             });
         } catch (e) {
-            // Field may not exist on the carrier-specific package sublist.
+            // Some carrier package sublists use slightly different fields.
         }
     }
 

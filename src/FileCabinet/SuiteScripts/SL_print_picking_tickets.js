@@ -23,10 +23,12 @@ define([
     const FIELD_ACTION = 'custpage_action';
     const FIELD_SELECTED = 'custpage_selected_orders';
 
-    const FIELD_COMMIT_FILTER = 'custpage_commit_filter';
-    const FIELD_LOCATION = 'custpage_location';
     const FIELD_ORDER_NUMBER = 'custpage_order_number';
-    const FIELD_ALLOW_REPRINT = 'custpage_allow_reprint';
+const FIELD_PICKER = 'custpage_picker';
+const FIELD_TRUCK = 'custpage_truck';
+
+const SO_FIELD_PICKER = 'custbody_truck_driver';
+const SO_FIELD_TRUCK = 'custbody_truck';
 
     /*
      * Optional script parameters:
@@ -136,94 +138,121 @@ define([
     }
 
     function addFilters(form, params) {
-        const leftGroup = form.addFieldGroup({
-            id: 'custpage_filters_left',
-            label: 'Filter By'
+    const filterGroup = form.addFieldGroup({
+        id: 'custpage_filter_group',
+        label: 'Filters'
+    });
+
+    const orderNumber = form.addField({
+        id: FIELD_ORDER_NUMBER,
+        label: 'Select Order Number',
+        type: serverWidget.FieldType.TEXT,
+        container: 'custpage_filter_group'
+    });
+
+    orderNumber.defaultValue = params[FIELD_ORDER_NUMBER] || '';
+
+    const pickerField = form.addField({
+        id: FIELD_PICKER,
+        label: 'Picker',
+        type: serverWidget.FieldType.SELECT,
+        container: 'custpage_filter_group'
+    });
+
+    pickerField.addSelectOption({
+        value: '',
+        text: ''
+    });
+
+    addCustomBodyFieldOptionsFromSalesOrders({
+        selectField: pickerField,
+        fieldId: SO_FIELD_PICKER
+    });
+
+    if (params[FIELD_PICKER]) {
+        pickerField.defaultValue = params[FIELD_PICKER];
+    }
+
+    const truckField = form.addField({
+        id: FIELD_TRUCK,
+        label: 'Truck',
+        type: serverWidget.FieldType.SELECT,
+        container: 'custpage_filter_group'
+    });
+
+    truckField.addSelectOption({
+        value: '',
+        text: ''
+    });
+
+    addCustomBodyFieldOptionsFromSalesOrders({
+        selectField: truckField,
+        fieldId: SO_FIELD_TRUCK
+    });
+
+    if (params[FIELD_TRUCK]) {
+        truckField.defaultValue = params[FIELD_TRUCK];
+    }
+
+    form.addButton({
+        id: 'custpage_refresh',
+        label: 'Refresh',
+        functionName: 'refreshPickingTickets'
+    });
+}
+
+function addCustomBodyFieldOptionsFromSalesOrders(options) {
+    const selectField = options.selectField;
+    const fieldId = options.fieldId;
+
+    const added = {};
+
+    try {
+        search.create({
+            type: search.Type.SALES_ORDER,
+            filters: [
+                ['type', 'anyof', 'SalesOrd'],
+                'AND',
+                ['mainline', 'is', 'T'],
+                'AND',
+                [fieldId, 'noneof', '@NONE@']
+            ],
+            columns: [
+                search.createColumn({
+                    name: fieldId,
+                    summary: search.Summary.GROUP,
+                    sort: search.Sort.ASC
+                })
+            ]
+        }).run().each(result => {
+            const value = result.getValue({
+                name: fieldId,
+                summary: search.Summary.GROUP
+            });
+
+            const text = result.getText({
+                name: fieldId,
+                summary: search.Summary.GROUP
+            });
+
+            if (value && !added[value]) {
+                selectField.addSelectOption({
+                    value: String(value),
+                    text: text || String(value)
+                });
+
+                added[value] = true;
+            }
+
+            return true;
         });
-
-        const commitFilter = form.addField({
-            id: FIELD_COMMIT_FILTER,
-            label: ' ',
-            type: serverWidget.FieldType.SELECT,
-            container: 'custpage_filters_left'
-        });
-
-        commitFilter.addSelectOption({
-            value: 'some',
-            text: 'Some Items Committed'
-        });
-
-        commitFilter.addSelectOption({
-            value: 'all',
-            text: 'All Items Committed'
-        });
-
-        commitFilter.addSelectOption({
-            value: 'any',
-            text: 'Any Items'
-        });
-
-        commitFilter.defaultValue = params[FIELD_COMMIT_FILTER] || 'some';
-
-        const location = form.addField({
-            id: FIELD_LOCATION,
-            label: 'Location',
-            type: serverWidget.FieldType.SELECT,
-            source: 'location',
-            container: 'custpage_filters_left'
-        });
-
-        if (params[FIELD_LOCATION]) {
-            location.defaultValue = params[FIELD_LOCATION];
-        }
-
-        const rightGroup = form.addFieldGroup({
-            id: 'custpage_filters_right',
-            label: 'Documents in Queue'
-        });
-
-        const queueField = form.addField({
-            id: 'custpage_documents_queue',
-            label: ' ',
-            type: serverWidget.FieldType.TEXT,
-            container: 'custpage_filters_right'
-        });
-
-        queueField.updateDisplayType({
-            displayType: serverWidget.FieldDisplayType.DISABLED
-        });
-
-        queueField.defaultValue = '';
-
-        const allowReprint = form.addField({
-            id: FIELD_ALLOW_REPRINT,
-            label: 'Allow Reprinting',
-            type: serverWidget.FieldType.CHECKBOX,
-            container: 'custpage_filters_right'
-        });
-
-        allowReprint.defaultValue = params[FIELD_ALLOW_REPRINT] === 'T' ? 'T' : 'F';
-
-        const orderGroup = form.addFieldGroup({
-            id: 'custpage_order_group',
-            label: ' '
-        });
-
-        const orderNumber = form.addField({
-            id: FIELD_ORDER_NUMBER,
-            label: 'Select Order Number',
-            type: serverWidget.FieldType.TEXT,
-            container: 'custpage_order_group'
-        });
-
-        orderNumber.defaultValue = params[FIELD_ORDER_NUMBER] || '';
-
-        form.addButton({
-            id: 'custpage_customize',
-            label: 'Refresh',
-            functionName: 'refreshPickingTickets'
+    } catch (e) {
+        log.error({
+            title: 'Unable to load filter options for ' + fieldId,
+            details: e
         });
     }
+}
 
     function addResultsTable(form, params) {
         const orders = searchEligibleSalesOrders(params);
@@ -242,121 +271,121 @@ define([
     }
 
     function searchEligibleSalesOrders(params) {
-        const commitment = params[FIELD_COMMIT_FILTER] || 'some';
-        const locationId = params[FIELD_LOCATION];
-        const orderNumber = params[FIELD_ORDER_NUMBER];
-        const allowReprint = params[FIELD_ALLOW_REPRINT] === 'T';
+    const orderNumber = params[FIELD_ORDER_NUMBER];
+    const pickerId = params[FIELD_PICKER];
+    const truckId = params[FIELD_TRUCK];
 
-        const printedFieldId = getPrintedFieldId();
+    const filters = [
+        ['type', 'anyof', 'SalesOrd'],
+        'AND',
+        ['mainline', 'is', 'F'],
+        'AND',
+        ['taxline', 'is', 'F'],
+        'AND',
+        ['shipping', 'is', 'F'],
+        'AND',
+        ['cogs', 'is', 'F'],
+        'AND',
+        ['closed', 'is', 'F'],
+        'AND',
+        ['item.type', 'noneof', ['Description', 'Discount', 'Markup', 'Subtotal']]
+    ];
 
-        const filters = [
-            ['type', 'anyof', 'SalesOrd'],
-            'AND',
-            ['mainline', 'is', 'F'],
-            'AND',
-            ['taxline', 'is', 'F'],
-            'AND',
-            ['shipping', 'is', 'F'],
-            'AND',
-            ['cogs', 'is', 'F'],
-            'AND',
-            ['closed', 'is', 'F'],
-            'AND',
-            ['item.type', 'noneof', ['Description', 'Discount', 'Markup', 'Subtotal']]
-        ];
+    if (orderNumber) {
+        filters.push('AND', ['tranid', 'contains', orderNumber]);
+    }
 
-        if (commitment === 'some') {
-            filters.push('AND', ['quantitycommitted', 'greaterthan', '0']);
-        }
+    if (pickerId) {
+        filters.push('AND', [SO_FIELD_PICKER, 'anyof', pickerId]);
+    }
 
-        if (commitment === 'all') {
-            filters.push('AND', ['quantitycommitted', 'greaterthan', '0']);
-            filters.push('AND', [
-                'formulanumeric: CASE WHEN NVL({quantitycommitted},0) >= (NVL({quantity},0) - NVL({quantityshiprecv},0)) THEN 1 ELSE 0 END',
-                'equalto',
-                '1'
-            ]);
-        }
+    if (truckId) {
+        filters.push('AND', [SO_FIELD_TRUCK, 'anyof', truckId]);
+    }
 
-        if (locationId) {
-            filters.push('AND', ['location', 'anyof', locationId]);
-        }
+    const columns = [
+        search.createColumn({
+            name: 'trandate',
+            summary: search.Summary.GROUP,
+            sort: search.Sort.DESC
+        }),
+        search.createColumn({
+            name: 'tranid',
+            summary: search.Summary.GROUP
+        }),
+        search.createColumn({
+            name: 'internalid',
+            summary: search.Summary.GROUP
+        }),
+        search.createColumn({
+            name: 'entity',
+            summary: search.Summary.GROUP
+        }),
+        search.createColumn({
+            name: 'shipaddress',
+            summary: search.Summary.GROUP
+        }),
+        search.createColumn({
+            name: 'shipmethod',
+            summary: search.Summary.GROUP
+        }),
+        search.createColumn({
+            name: SO_FIELD_PICKER,
+            summary: search.Summary.GROUP
+        }),
+        search.createColumn({
+            name: SO_FIELD_TRUCK,
+            summary: search.Summary.GROUP
+        })
+    ];
 
-        if (orderNumber) {
-            filters.push('AND', ['tranid', 'contains', orderNumber]);
-        }
+    const results = [];
 
-        if (printedFieldId && !allowReprint) {
-            filters.push('AND', [printedFieldId, 'is', 'F']);
-        }
-
-        const columns = [
-            search.createColumn({
-                name: 'trandate',
-                summary: search.Summary.GROUP,
-                sort: search.Sort.DESC
-            }),
-            search.createColumn({
-                name: 'tranid',
-                summary: search.Summary.GROUP
-            }),
-            search.createColumn({
+    search.create({
+        type: search.Type.SALES_ORDER,
+        filters,
+        columns
+    }).run().each(result => {
+        results.push({
+            id: result.getValue({
                 name: 'internalid',
                 summary: search.Summary.GROUP
             }),
-            search.createColumn({
+            date: result.getValue({
+                name: 'trandate',
+                summary: search.Summary.GROUP
+            }),
+            number: result.getValue({
+                name: 'tranid',
+                summary: search.Summary.GROUP
+            }),
+            customer: result.getText({
                 name: 'entity',
                 summary: search.Summary.GROUP
-            }),
-            search.createColumn({
+            }) || '',
+            shipTo: result.getValue({
                 name: 'shipaddress',
                 summary: search.Summary.GROUP
-            }),
-            search.createColumn({
+            }) || '',
+            shipVia: result.getText({
                 name: 'shipmethod',
                 summary: search.Summary.GROUP
-            })
-        ];
-
-        const results = [];
-
-        search.create({
-            type: search.Type.SALES_ORDER,
-            filters,
-            columns
-        }).run().each(result => {
-            results.push({
-                id: result.getValue({
-                    name: 'internalid',
-                    summary: search.Summary.GROUP
-                }),
-                date: result.getValue({
-                    name: 'trandate',
-                    summary: search.Summary.GROUP
-                }),
-                number: result.getValue({
-                    name: 'tranid',
-                    summary: search.Summary.GROUP
-                }),
-                customer: result.getText({
-                    name: 'entity',
-                    summary: search.Summary.GROUP
-                }) || '',
-                shipTo: result.getValue({
-                    name: 'shipaddress',
-                    summary: search.Summary.GROUP
-                }) || '',
-                shipVia: result.getText({
-                    name: 'shipmethod',
-                    summary: search.Summary.GROUP
-                }) || ''
-            });
-
-            return results.length < 500;
+            }) || '',
+            picker: result.getText({
+                name: SO_FIELD_PICKER,
+                summary: search.Summary.GROUP
+            }) || '',
+            truck: result.getText({
+                name: SO_FIELD_TRUCK,
+                summary: search.Summary.GROUP
+            }) || ''
         });
 
-        return results;
-    }
+        return results.length < 500;
+    });
+
+    return results;
+}
 
     function buildResultsHtml(orders) {
         let rows = '';
@@ -364,7 +393,7 @@ define([
         if (!orders.length) {
             rows = `
                 <tr>
-                    <td colspan="8" style="padding:12px;text-align:center;">
+                    <td colspan="10" style="padding:12px;text-align:center;">
                         No records to show.
                     </td>
                 </tr>
@@ -372,22 +401,24 @@ define([
         } else {
             orders.forEach(order => {
                 rows += `
-                    <tr>
-                        <td class="center">
-                            <input type="checkbox"
-                                   class="pt-check"
-                                   data-id="${escapeHtml(order.id)}"
-                                   data-number="${escapeHtml(order.number)}">
-                        </td>
-                        <td>${escapeHtml(order.date)}</td>
-                        <td>Sales Order</td>
-                        <td>${escapeHtml(order.number)}</td>
-                        <td>${escapeHtml(order.id)}</td>
-                        <td>${escapeHtml(order.customer)}</td>
-                        <td>${escapeHtml(order.shipTo).replace(/\n/g, '<br>')}</td>
-                        <td>${escapeHtml(order.shipVia)}</td>
-                    </tr>
-                `;
+    <tr>
+        <td class="center">
+            <input type="checkbox"
+                   class="pt-check"
+                   data-id="${escapeHtml(order.id)}"
+                   data-number="${escapeHtml(order.number)}">
+        </td>
+        <td>${escapeHtml(order.date)}</td>
+        <td>Sales Order</td>
+        <td>${escapeHtml(order.number)}</td>
+        <td>${escapeHtml(order.id)}</td>
+        <td>${escapeHtml(order.customer)}</td>
+        <td>${escapeHtml(order.shipTo).replace(/\n/g, '<br>')}</td>
+        <td>${escapeHtml(order.shipVia)}</td>
+        <td>${escapeHtml(order.picker)}</td>
+        <td>${escapeHtml(order.truck)}</td>
+    </tr>
+`;
             });
         }
 
@@ -443,17 +474,19 @@ define([
             <div class="pt-wrapper">
                 <table class="pt-table">
                     <thead>
-                        <tr>
-                            <th>Print</th>
-                            <th>Date</th>
-                            <th>Type</th>
-                            <th>Number</th>
-                            <th>ID</th>
-                            <th>Customer</th>
-                            <th>Ship To</th>
-                            <th>Ship Via</th>
-                        </tr>
-                    </thead>
+    <tr>
+        <th>Print</th>
+        <th>Date</th>
+        <th>Type</th>
+        <th>Number</th>
+        <th>ID</th>
+        <th>Customer</th>
+        <th>Ship To</th>
+        <th>Ship Via</th>
+        <th>Picker</th>
+        <th>Truck</th>
+    </tr>
+</thead>
                     <tbody>
                         ${rows}
                     </tbody>

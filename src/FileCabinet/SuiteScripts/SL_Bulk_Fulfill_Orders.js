@@ -431,6 +431,8 @@ function addOrdersHtmlTable(form, params) {
     `;
 }
 
+
+
   function buildSelectOptions(options, selectedValue) {
     return options.map(option => {
         const selected = String(option.id) === String(selectedValue || '') ? 'selected' : '';
@@ -1626,6 +1628,16 @@ const fulfillmentResult = createItemFulfillment({
     truck: order.truck
 });
 
+/*
+ * Save selected Picker and Truck back to the source Sales Order.
+ * This runs only after the Item Fulfillment was successfully created.
+ */
+updateSalesOrderLogistics(
+    order.soId,
+    order.truckDriver,
+    order.truck
+);
+
 const salesOrderTranId = getTransactionTranId(record.Type.SALES_ORDER, order.soId);
 
 results.push(
@@ -1796,6 +1808,36 @@ return {
             type: format.Type.DATE
         });
     }
+    
+    function updateSalesOrderLogistics(salesOrderId, truckDriver, truck) {
+    if (!salesOrderId) {
+        return;
+    }
+
+    const values = {};
+
+    if (truckDriver) {
+        values.custbody_truck_driver = truckDriver;
+    }
+
+    if (truck) {
+        values.custbody_truck = truck;
+    }
+
+    if (!Object.keys(values).length) {
+        return;
+    }
+
+    record.submitFields({
+        type: record.Type.SALES_ORDER,
+        id: salesOrderId,
+        values,
+        options: {
+            enableSourcing: true,
+            ignoreMandatoryFields: true
+        }
+    });
+}
 
     function escapeHtml(value) {
         return String(value || '')
