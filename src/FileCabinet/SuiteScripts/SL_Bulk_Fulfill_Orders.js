@@ -118,29 +118,8 @@ function addOrdersHtmlTable(form, params) {
 }
 
   function buildOrdersHtml(orders, params) {
-    const driverOptions = [
-    { id: '', name: '' },
-    { id: '1', name: 'Picker 1' },
-    { id: '2', name: 'Picker 2' },
-    { id: '3', name: 'Picker 3' },
-    { id: '101', name: 'Picker 4' },
-    { id: '102', name: 'Picker 5' },
-    { id: '103', name: 'Picker 6' }
-];
-
-    const truckOptions = [
-    { id: '', name: '' },
-    { id: '1', name: 'Truck 1' },
-    { id: '101', name: 'Truck 2' },
-    { id: '102', name: 'Truck 3' },
-    { id: '103', name: 'Truck 4' },
-    { id: '104', name: 'Truck 5' },
-    { id: '105', name: 'Truck 6' },
-    { id: '106', name: 'Truck 7' },
-    { id: '107', name: 'Truck 8' },
-    { id: '108', name: 'Truck 9' },
-    { id: '109', name: 'Truck 10' }
-];
+    const driverOptions = getCustomListOptions('customlist_truck_driver_list');
+const truckOptions = getCustomListOptions('customlist_truck_fulfillment');
 
     let rowsHtml = '';
 
@@ -431,7 +410,58 @@ function addOrdersHtmlTable(form, params) {
     `;
 }
 
+function getCustomListOptions(listScriptId) {
+    const options = [
+        {
+            id: '',
+            name: ''
+        }
+    ];
 
+    try {
+        const listSearch = search.create({
+            type: listScriptId,
+            filters: [
+                ['isinactive', 'is', 'F']
+            ],
+            columns: [
+                search.createColumn({
+                    name: 'name',
+                    sort: search.Sort.ASC
+                }),
+                search.createColumn({
+                    name: 'internalid'
+                })
+            ]
+        });
+
+        listSearch.run().each(result => {
+            const id = result.getValue({
+                name: 'internalid'
+            });
+
+            const name = result.getValue({
+                name: 'name'
+            });
+
+            if (id && name) {
+                options.push({
+                    id: String(id),
+                    name: String(name)
+                });
+            }
+
+            return true;
+        });
+    } catch (e) {
+        log.error({
+            title: `Unable to load custom list options: ${listScriptId}`,
+            details: e
+        });
+    }
+
+    return options;
+}
 
   function buildSelectOptions(options, selectedValue) {
     return options.map(option => {

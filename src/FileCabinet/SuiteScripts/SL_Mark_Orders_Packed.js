@@ -202,7 +202,6 @@ const RECORD_STATUS_PACKED = 'B';
         search.createColumn({ name: 'entity' }),
         search.createColumn({ name: 'shipmethod' }),
         search.createColumn({ name: 'location' }),
-        search.createColumn({ name: 'trackingnumbers' }),
         search.createColumn({ name: 'custbody_truck_driver' }),
         search.createColumn({ name: 'custbody_truck' }),
         search.createColumn({ name: 'type', join: 'createdFrom' }),
@@ -254,7 +253,6 @@ const RECORD_STATUS_PACKED = 'B';
                 location: result.getText('location') || '',
                 picker: result.getText('custbody_truck_driver') || '',
                 truck: result.getText('custbody_truck') || '',
-                tracking: result.getValue('trackingnumbers') || ''
             });
         });
     });
@@ -268,7 +266,7 @@ const RECORD_STATUS_PACKED = 'B';
     if (!rows.length) {
         rowsHtml = `
             <tr>
-                <td colspan="12" style="text-align:center;padding:14px;">
+                <td colspan="10" style="text-align:center;padding:14px;">
                     No picked item fulfillments found.
                 </td>
             </tr>
@@ -289,12 +287,6 @@ const RECORD_STATUS_PACKED = 'B';
                     <td>${escapeHtml(row.location)}</td>
                     <td>${escapeHtml(row.picker)}</td>
                     <td>${escapeHtml(row.truck)}</td>
-                    <td>
-                        <input type="text" class="pack-weight" data-ifid="${escapeHtml(row.id)}" style="width:120px;">
-                    </td>
-                    <td>
-                        <input type="text" class="pack-tracking" data-ifid="${escapeHtml(row.id)}" value="${escapeHtml(row.tracking)}" style="width:180px;">
-                    </td>
                 </tr>
             `;
         });
@@ -360,8 +352,6 @@ const RECORD_STATUS_PACKED = 'B';
                             <th>Location</th>
                             <th>Picker</th>
                             <th>Truck</th>
-                            <th>Weight (lbs)</th>
-                            <th>Tracking Number</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -452,18 +442,13 @@ function getNsFieldValue(fieldId) {
             document.addEventListener('submit', function() {
                 var payload = [];
 
-                document.querySelectorAll('.pack-check:checked').forEach(function(cb) {
-                    var ifId = cb.getAttribute('data-ifid');
+document.querySelectorAll('.pack-check:checked').forEach(function(cb) {
+    var ifId = cb.getAttribute('data-ifid');
 
-                    var weightEl = document.querySelector('.pack-weight[data-ifid="' + ifId + '"]');
-                    var trackingEl = document.querySelector('.pack-tracking[data-ifid="' + ifId + '"]');
-
-                    payload.push({
-                        fulfillmentId: ifId,
-                        weight: weightEl ? weightEl.value : '',
-                        trackingNumber: trackingEl ? trackingEl.value : ''
-                    });
-                });
+    payload.push({
+        fulfillmentId: ifId
+    });
+});
 
                 var payloadField = document.getElementById('custpage_pack_payload');
                 if (payloadField) {
@@ -543,42 +528,36 @@ function getNsFieldValue(fieldId) {
     }
 
     function markFulfillmentsPacked(payload) {
-        let success = 0;
-        let failed = 0;
+    let success = 0;
+    let failed = 0;
 
-        payload.forEach(line => {
-            try {
-                updatePackageInfoIfNeeded(
-                    line.fulfillmentId,
-                    line.weight,
-                    line.trackingNumber
-                );
+    payload.forEach(line => {
+        try {
+            record.submitFields({
+                type: record.Type.ITEM_FULFILLMENT,
+                id: line.fulfillmentId,
+                values: {
+                    shipstatus: RECORD_STATUS_PACKED
+                },
+                options: {
+                    enableSourcing: false,
+                    ignoreMandatoryFields: true
+                }
+            });
 
-                record.submitFields({
-    type: record.Type.ITEM_FULFILLMENT,
-    id: line.fulfillmentId,
-    values: {
-        shipstatus: RECORD_STATUS_PACKED
-    },
-    options: {
-        enableSourcing: false,
-        ignoreMandatoryFields: true
-    }
-});
+            success++;
+        } catch (e) {
+            failed++;
 
-                success++;
-            } catch (e) {
-                failed++;
+            log.error({
+                title: `Failed to pack fulfillment ${line.fulfillmentId}`,
+                details: e
+            });
+        }
+    });
 
-                log.error({
-                    title: `Failed to pack fulfillment ${line.fulfillmentId}`,
-                    details: e
-                });
-            }
-        });
-
-        return { success, failed };
-    }
+    return { success, failed };
+}
 
     function updatePackageInfoIfNeeded(fulfillmentId, weight, trackingNumber) {
         if (!weight && !trackingNumber) {

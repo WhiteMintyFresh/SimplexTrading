@@ -839,12 +839,13 @@ function cleanPdfAddress(value) {
         </tr>
     `).join('');
 
-    const fillerRows = buildBlankRows(Math.max(9 - order.lines.length, 0));
+    // fewer filler rows so the table area stays large without pushing content too low
+    const fillerRows = buildBlankRows(Math.max(8 - order.lines.length, 0));
 
     const logoHtml = logoUrl
-    ? `<img src="${xmlEscape(logoUrl)}" style="width:125px;height:70px;object-fit:contain;" />`
-    : `<span style="font-size:22pt;font-weight:bold;color:#174f7a;">SIMPLEX</span><br/>
-       <span style="font-size:7pt;letter-spacing:1.5px;color:#666666;">TRADING CO. LTD.</span>`;
+        ? `<img src="${xmlEscape(logoUrl)}" style="width:190px;height:48px;" />`
+        : `<span style="font-size:20pt;font-weight:bold;color:#174f7a;">SIMPLEX</span><br/>
+           <span style="font-size:6pt;letter-spacing:1px;color:#666666;">TRADING CO. LTD.</span>`;
 
     return `
         <pdf>
@@ -852,7 +853,7 @@ function cleanPdfAddress(value) {
                 <style>
                     body {
                         font-family: Helvetica, Arial, sans-serif;
-                        font-size: 9pt;
+                        font-size: 8pt;
                         color: #222222;
                     }
 
@@ -863,56 +864,56 @@ function cleanPdfAddress(value) {
 
                     .date-order td {
                         border: 0.75px solid #222222;
-                        padding: 5px;
+                        padding: 4px;
                     }
 
                     .date-order-label {
-                        font-size: 8pt;
+                        font-size: 7pt;
                         font-weight: bold;
                     }
 
                     .date-order-value {
-                        font-size: 9pt;
+                        font-size: 8pt;
                     }
 
                     .title-single {
-    font-size: 20pt;
-    font-weight: bold;
-    letter-spacing: 1px;
-    text-align: center;
-    white-space: nowrap;
-}
+                        font-size: 16pt;
+                        font-weight: bold;
+                        letter-spacing: 0.5px;
+                        text-align: center;
+                        white-space: nowrap;
+                    }
 
                     .ship-box {
                         border: 0.75px solid #222222;
-                        padding: 7px;
-                        height: 95px;
+                        padding: 5px;
+                        height: 68px;
                         vertical-align: top;
                     }
 
                     .label {
-                        font-size: 10pt;
+                        font-size: 9pt;
                         font-weight: bold;
                     }
 
                     .address {
-                        font-size: 9pt;
-                        line-height: 12pt;
+                        font-size: 8pt;
+                        line-height: 10pt;
                     }
 
                     .assignment-title {
-                        font-size: 10pt;
+                        font-size: 8pt;
                         font-weight: bold;
                         text-align: center;
-                        padding-bottom: 4px;
+                        padding-bottom: 2px;
                     }
 
                     .assignment-value {
-                        font-size: 10pt;
+                        font-size: 8pt;
                         text-align: center;
                         border: 0.75px solid #222222;
-                        padding: 6px;
-                        height: 20px;
+                        padding: 4px;
+                        height: 14px;
                     }
 
                     .line-table {
@@ -923,8 +924,8 @@ function cleanPdfAddress(value) {
                     .line-table th {
                         border-right: 0.75px solid #222222;
                         border-bottom: 0.75px solid #222222;
-                        padding: 6px;
-                        font-size: 10pt;
+                        padding: 5px;
+                        font-size: 8.5pt;
                         font-weight: bold;
                         text-align: left;
                     }
@@ -933,72 +934,72 @@ function cleanPdfAddress(value) {
                         border-right: none;
                     }
 
-.line-cell {
-    border-right: 0.75px solid #222222;
-    padding: 5px;
-    height: 20px;
-    vertical-align: top;
-    font-size: 9pt;
-}
+                    .line-cell {
+                        border-right: 0.75px solid #222222;
+                        padding: 4px;
+                        height: 16px;
+                        vertical-align: top;
+                        font-size: 8pt;
+                    }
 
-.line-cell-last {
-    padding: 5px;
-    height: 20px;
-    vertical-align: top;
-    font-size: 9pt;
-}
+                    .line-cell-last {
+                        padding: 4px;
+                        height: 16px;
+                        vertical-align: top;
+                        font-size: 8pt;
+                    }
 
-.blank-cell {
-    border-right: 0.75px solid #222222;
-    padding: 5px;
-    height: 20px;
-}
+                    .blank-cell {
+                        border-right: 0.75px solid #222222;
+                        padding: 4px;
+                        height: 16px;
+                    }
 
-.blank-cell-last {
-    padding: 5px;
-    height: 20px;
-}
+                    .blank-cell-last {
+                        padding: 4px;
+                        height: 16px;
+                    }
 
                     .code-cell {
                         width: 14%;
                     }
 
                     .desc-cell {
-                        width: 39%;
+                        width: 40%;
                     }
 
                     .qty-cell {
-                        width: 10%;
+                        width: 9%;
                         text-align: right;
                     }
 
                     .unit-cell {
-                        width: 12%;
+                        width: 11%;
                         text-align: center;
                     }
 
                     .onhand-cell {
-                        width: 25%;
+                        width: 26%;
                         text-align: right;
                     }
                 </style>
             </head>
 
-            <body size="Letter" margin="0.42in">
+            <body size="Letter" margin="0.28in">
 
                 <table>
                     <tr>
-                        <td style="width:26%; vertical-align:top;">
+                        <td style="width:34%; vertical-align:middle;">
                             ${logoHtml}
                         </td>
 
-                        <td style="width:8%;"></td>
+                        <td style="width:4%;"></td>
 
                         <td style="width:36%; vertical-align:middle; text-align:center;">
-    <span class="title-single">PICKING TICKET</span>
-</td>
+                            <span class="title-single">PICKING TICKET</span>
+                        </td>
 
-                        <td style="width:6%;"></td>
+                        <td style="width:4%;"></td>
 
                         <td style="width:22%; vertical-align:top;">
                             <table class="date-order">
@@ -1019,7 +1020,7 @@ function cleanPdfAddress(value) {
 
                 <table>
                     <tr>
-                        <td style="width:42%;" class="ship-box">
+                        <td style="width:46%;" class="ship-box">
                             <span class="label">SHIP TO:</span><br/>
                             <span class="address">
                                 ${xmlEscape(order.customer)}<br/>
@@ -1027,9 +1028,9 @@ function cleanPdfAddress(value) {
                             </span>
                         </td>
 
-                        <td style="width:16%;"></td>
+                        <td style="width:14%;"></td>
 
-                        <td style="width:17%; vertical-align:bottom;">
+                        <td style="width:16%; vertical-align:bottom;">
                             <table>
                                 <tr>
                                     <td class="assignment-title">PICKER</td>
@@ -1040,9 +1041,9 @@ function cleanPdfAddress(value) {
                             </table>
                         </td>
 
-                        <td style="width:8%;"></td>
+                        <td style="width:4%;"></td>
 
-                        <td style="width:17%; vertical-align:bottom;">
+                        <td style="width:16%; vertical-align:bottom;">
                             <table>
                                 <tr>
                                     <td class="assignment-title">TRUCK</td>
@@ -1052,6 +1053,8 @@ function cleanPdfAddress(value) {
                                 </tr>
                             </table>
                         </td>
+
+                        <td style="width:4%;"></td>
                     </tr>
                 </table>
 
@@ -1061,10 +1064,10 @@ function cleanPdfAddress(value) {
                     <thead>
                         <tr>
                             <th style="width:14%;">CODE</th>
-                            <th style="width:39%;">DESCRIPTION</th>
-                            <th style="width:10%; text-align:right;">QTY</th>
-                            <th style="width:12%; text-align:center;">UNIT</th>
-                            <th class="last-header" style="width:25%; text-align:right;">ON HAND</th>
+                            <th style="width:40%;">DESCRIPTION</th>
+                            <th style="width:9%; text-align:right;">QTY</th>
+                            <th style="width:11%; text-align:center;">UNIT</th>
+                            <th class="last-header" style="width:26%; text-align:right;">ON HAND</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1073,9 +1076,9 @@ function cleanPdfAddress(value) {
                     </tbody>
                 </table>
 
-                <br/><br/>
+                <br/>
 
-                <table style="width:150px;">
+                <table style="width:120px;">
                     <tr>
                         <td style="text-align:center;">
                             <barcode codetype="code128" showtext="true" value="${xmlEscape(order.number)}" />
