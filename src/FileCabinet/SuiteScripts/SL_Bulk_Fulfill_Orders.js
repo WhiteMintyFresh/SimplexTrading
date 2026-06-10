@@ -141,7 +141,10 @@ const truckOptions = getCustomListOptions('customlist_truck_fulfillment');
             <button type="button" class="expand-btn" onclick="toggleItems('${rowId}', this)">+</button>
         </td>
         <td class="center">
-            <input type="checkbox" class="fulfill-check" data-soid="${escapeHtml(order.id)}">
+            <input type="checkbox"
+       class="fulfill-check"
+       data-soid="${escapeHtml(order.id)}"
+       data-weight="${escapeHtml(order.totalWeight || 0)}">
         </td>
         <td>${escapeHtml(order.tranid)}</td>
         <td>${escapeHtml(order.customer)}</td>
@@ -150,6 +153,7 @@ const truckOptions = getCustomListOptions('customlist_truck_fulfillment');
         <td>${escapeHtml(order.zone)}</td>
         <td>${escapeHtml(order.enteredBy)}</td>
         <td>${escapeHtml(order.createdDate)}</td>
+        <td class="right">${escapeHtml(formatDisplayNumber(order.totalWeight || 0))}</td>
         <td>
             <select class="line-driver" data-soid="${escapeHtml(order.id)}">
                 ${buildSelectOptions(driverOptions, '')}
@@ -305,6 +309,20 @@ const truckOptions = getCustomListOptions('customlist_truck_fulfillment');
         background: #f4f4f4;
     }
 
+    .weight-summary-box {
+    margin-left: 18px;
+    padding: 6px 10px;
+    border: 1px solid #d0d0d0;
+    background: #fafafa;
+    font-size: 12px;
+    line-height: 18px;
+    min-width: 320px;
+}
+
+.right {
+    text-align: right;
+}
+
     .fulfill-check {
         cursor: pointer;
     }
@@ -319,11 +337,16 @@ const truckOptions = getCustomListOptions('customlist_truck_fulfillment');
 </style>
 
 <div class="delivery-page">
-    <div class="delivery-toolbar">
-        <button type="button" onclick="markAllCustom()">Mark All</button>
-        <button type="button" onclick="unmarkAllCustom()">Unmark All</button>
-        <button type="button" onclick="applyFiltersCustom()">Apply Filters</button>
-    </div>
+<div class="delivery-toolbar">
+    <button type="button" onclick="markAllCustom()">Mark All</button>
+    <button type="button" onclick="unmarkAllCustom()">Unmark All</button>
+    <button type="button" onclick="applyFiltersCustom()">Apply Filters</button>
+
+    <div class="weight-summary-box">
+    <div><strong>Selected Cu Ft:</strong> <span id="selected_weight_total">0</span></div>
+    <div><strong>Cu Ft by Truck:</strong> <span id="selected_weight_by_truck">None</span></div>
+</div>
+</div>
 
     <div class="delivery-table-wrapper">
         <table class="delivery-table">
@@ -338,6 +361,7 @@ const truckOptions = getCustomListOptions('customlist_truck_fulfillment');
 <th>Truck Stop Zone</th>
 <th>Entered By</th>
 <th>Date/Time Entered</th>
+<th>Cu Ft</th>
 <th>Picker</th>
 <th>Truck</th>
                 </tr>
@@ -366,23 +390,89 @@ const truckOptions = getCustomListOptions('customlist_truck_fulfillment');
             }
 
             function markAllCustom() {
-                document.querySelectorAll('.fulfill-check').forEach(function(cb) {
-                    cb.checked = true;
-                });
-            }
+    document.querySelectorAll('.fulfill-check').forEach(function(cb) {
+        cb.checked = true;
+    });
+
+    updateSelectedWeight();
+}
 
             function unmarkAllCustom() {
-                document.querySelectorAll('.fulfill-check').forEach(function(cb) {
-                    cb.checked = false;
-                });
-            }
+    document.querySelectorAll('.fulfill-check').forEach(function(cb) {
+        cb.checked = false;
+    });
 
+    updateSelectedWeight();
+}
+
+function updateSelectedWeight() {
+    var totalWeight = 0;
+    var truckTotals = {};
+
+    document.querySelectorAll('.fulfill-check:checked').forEach(function(cb) {
+        var soId = cb.getAttribute('data-soid');
+        var weight = parseFloat(cb.getAttribute('data-weight') || '0') || 0;
+
+        totalWeight += weight;
+
+        var truckSelect = document.querySelector('.line-truck[data-soid="' + soId + '"]');
+        var truckName = 'Unassigned';
+
+        if (truckSelect && truckSelect.value) {
+            truckName = truckSelect.options[truckSelect.selectedIndex].text || 'Unassigned';
+        }
+
+        if (!truckTotals[truckName]) {
+            truckTotals[truckName] = 0;
+        }
+
+        truckTotals[truckName] += weight;
+    });
+
+    var totalEl = document.getElementById('selected_weight_total');
+    if (totalEl) {
+        totalEl.innerHTML = formatWeightDisplay(totalWeight);
+    }
+
+    var truckEl = document.getElementById('selected_weight_by_truck');
+    if (truckEl) {
+        var truckParts = [];
+
+        Object.keys(truckTotals).forEach(function(truckName) {
+            truckParts.push(truckName + ': ' + formatWeightDisplay(truckTotals[truckName]));
+        });
+
+        truckEl.innerHTML = truckParts.length ? truckParts.join(' | ') : 'None';
+    }
+}
+
+function formatWeightDisplay(value) {
+    value = parseFloat(value || '0') || 0;
+
+    return value.toLocaleString(undefined, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 5
+    });
+}
             function setUrlParam(url, fieldId) {
                 var fld = document.getElementById(fieldId);
                 if (fld) {
                     url.searchParams.set(fieldId, fld.value || '');
                 }
             }
+
+document.addEventListener('change', function(e) {
+    if (
+        e.target.classList.contains('fulfill-check') ||
+        e.target.classList.contains('line-truck')
+    ) {
+        updateSelectedWeight();
+    }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    updateSelectedWeight();
+});
 
             document.addEventListener('submit', function() {
                 var payload = [];
@@ -1204,6 +1294,13 @@ const itemDetailsByOrder = getOrderItemDetails(finalOrderIds);
 
 finalResults.forEach(order => {
     order.items = itemDetailsByOrder[order.id] || [];
+
+    order.totalWeight = roundNumber(
+        order.items.reduce((total, line) => {
+            return total + Number(line.extWeightValue || 0);
+        }, 0),
+        5
+    );
 });
 
 return finalResults;
@@ -1496,9 +1593,12 @@ const line = {
     unit: '',
     unitPrice: formatDisplayNumber(unitPrice),
     extended: formatDisplayNumber(amount),
+    extWeightValue: itemWeight && shipQtyUom
+    ? roundNumber(itemWeight * (shipQtyUom * conversionRate), 5)
+    : 0,
     extWeight: itemWeight && shipQtyUom
-        ? formatDisplayNumber(itemWeight * (shipQtyUom * conversionRate))
-        : ''
+    ? formatDisplayNumber(itemWeight * (shipQtyUom * conversionRate))
+    : ''
 };
 
         if (!details[orderId]) {
