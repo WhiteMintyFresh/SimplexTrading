@@ -28,6 +28,13 @@ define([
     const PAYLOAD_FIELD = 'custpage_shipment_payload';
     const PAGE_SIZE = 200;
 
+    // Existing Receiving Report Suitelet created previously.
+    // Change these only if your script/deployment IDs are different.
+    const RECEIVING_REPORT_SCRIPT_ID =
+        'customscript_is_receiving_report_sl';
+    const RECEIVING_REPORT_DEPLOYMENT_ID =
+        'customdeploy_is_receiving_report_sl';
+
     /*
      * For a custom list field, sourceType is the custom-list script ID.
      * Example: customlist_container_status
@@ -609,6 +616,14 @@ function stripTime(dateValue) {
                 isEditMode: false
             });
 
+            const receivingReportUrl = url.resolveScript({
+                scriptId: RECEIVING_REPORT_SCRIPT_ID,
+                deploymentId: RECEIVING_REPORT_DEPLOYMENT_ID,
+                params: {
+                    shipmentid: shipment.id
+                }
+            });
+
             const editableCells = EDITABLE_FIELDS.map((field) => {
                 return `
                     <td>
@@ -651,6 +666,16 @@ return `
                             ${escapeHtml(shipment.shipmentNumber)}
                         </a>
                     </td>
+
+                    <td class="center">
+                        <a
+                            class="print-report-btn"
+                            href="${escapeHtml(receivingReportUrl)}"
+                            target="_blank"
+                            rel="noopener noreferrer">
+                            Print
+                        </a>
+                    </td>
 ${editableCells}
 </tr>
 
@@ -658,7 +683,7 @@ ${editableCells}
     class="shipment-items-row"
     style="display:none;">
 
-    <td colspan="${EDITABLE_FIELDS.length + 3}">
+    <td colspan="${EDITABLE_FIELDS.length + 4}">
         ${buildInboundItemsTable(shipment.items || [])}
     </td>
 </tr>
@@ -782,6 +807,25 @@ ${editableCells}
     background:#f1f1f1;
 }
 
+.print-report-btn {
+    display:inline-block;
+    min-width:52px;
+    padding:4px 8px;
+    border:1px solid #2f6f9f;
+    border-radius:3px;
+    background:#ffffff;
+    color:#1f5f8f;
+    text-decoration:none;
+    text-align:center;
+    font-weight:bold;
+    line-height:16px;
+}
+
+.print-report-btn:hover {
+    background:#eef6fb;
+    text-decoration:none;
+}
+
 .shipment-items-row > td {
     background:#fafafa !important;
     padding:8px 12px !important;
@@ -846,13 +890,14 @@ ${editableCells}
 <th></th>
 <th>Save</th>
 <th>Shipment Number</th>
+<th>Print</th>
 ${headers}
                             </tr>
                         </thead>
                         <tbody>
                             ${rows || `
                                 <tr>
-                                    <td colspan="${EDITABLE_FIELDS.length + 3}"
+                                    <td colspan="${EDITABLE_FIELDS.length + 4}"
                                         style="padding:14px;text-align:center;">
                                         No inbound shipments found.
                                     </td>
