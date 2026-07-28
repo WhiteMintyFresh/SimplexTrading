@@ -151,7 +151,6 @@ define(['N/record', 'N/render', 'N/format', 'N/log', 'N/search'], (record, rende
         const count = getLineCount(rec);
 
         for (let line = 0; line < count; line += 1) {
-            const po = safeSublistText(rec, 'purchaseorder', line);
             const vendor = safeSublistText(rec, 'povendor', line);
             const item =
                 safeSublistText(rec, 'shipmentitem', line) ||
@@ -182,17 +181,28 @@ define(['N/record', 'N/render', 'N/format', 'N/log', 'N/search'], (record, rende
             });
 
             const expected = safeSublistValue(rec, 'quantityexpected', line);
+            const unit =
+    safeSublistText(rec, 'unit', line) ||
+    safeSublistValue(rec, 'unit', line);
 
-            rows.push(`
-                <tr>
-                    <td class="po">${xmlEscape(po)}</td>
-                    <td class="vendor">${xmlEscape(vendor)}</td>
-                    <td class="item">${xmlEscape(item)}</td>
-                    <td class="description">${xmlEscape(description)}</td>
-                    <td class="qty">${xmlEscape(numberText(expected))}</td>
-                    <td class="received">&#160;</td>
-                </tr>
-            `);
+rows.push(`
+    <tr>
+        <td class="vendor">${xmlEscape(vendor)}</td>
+        <td class="item">${xmlEscape(item)}</td>
+        <td class="description">${xmlEscape(description)}</td>
+        <td class="qty">${xmlEscape(numberText(expected))}</td>
+        <td class="um">${xmlEscape(unit)}</td>
+        <td class="received">&#160;</td>
+    </tr>
+<tr class="pallet-row">
+    <td class="vendor pallet-label"><b>Pallets:</b></td>
+    <td class="item">&#160;</td>
+    <td class="description pallets-space">&#160;</td>
+    <td class="qty">&#160;</td>
+    <td class="um">&#160;</td>
+    <td class="received">&#160;</td>
+</tr>
+`);
         }
 
         if (!rows.length) {
@@ -227,9 +237,9 @@ define(['N/record', 'N/render', 'N/format', 'N/log', 'N/search'], (record, rende
             font-family: Helvetica, Arial, sans-serif;
         }
         body {
-            font-size: 8pt;
-            color: #111111;
-        }
+    font-size: 8.5pt;
+    color: #111111;
+}
         .report-title {
             width: 100%;
             margin-bottom: 14px;
@@ -264,35 +274,78 @@ define(['N/record', 'N/render', 'N/format', 'N/log', 'N/search'], (record, rende
             font-weight: bold;
             border-bottom: 1px solid #d8d8d8;
             padding: 5px 3px;
-            font-size: 7pt;
+            font-size: 7.5pt;
         }
         .items-body td {
             border-bottom: 1px solid #dedede;
             padding: 5px 3px;
             vertical-align: top;
-            font-size: 7pt;
+            font-size: 7.5pt;
         }
-        .po { width: 12%; color: #111111; }
-        .vendor { width: 10%; color: #777777; text-align: center; }
-        .item { width: 18%; }
-        .description {
-            width: 30%;
-            color: #8a8a8a;
-            line-height: 9px;
-            height: 20px;
-            overflow: hidden;
-        }
-        .qty {
-            width: 15%;
-            text-align: center;
-            font-weight: bold;
-        }
-        .received {
-            width: 15%;
-            border-left: 1px solid #cfcfcf;
-            height: 25px;
-            text-align: center;
-        }
+.vendor {
+    width: 10%;
+    color: #777777;
+    text-align: center;
+}
+
+.item {
+    width: 18%;
+}
+
+.description {
+    width: 47%;
+    color: #8a8a8a;
+    line-height: 10px;
+    height: 20px;
+    overflow: hidden;
+    padding-right: 6px;
+}
+
+.qty {
+    width: 8%;
+    text-align: center;
+    font-weight: bold;
+    border-left: 1px solid #d7d7d7;
+    padding-left: 3px;
+    padding-right: 3px;
+}
+
+.um {
+    width: 5%;
+    text-align: center;
+    border-left: 1px solid #d7d7d7;
+    padding-left: 2px;
+    padding-right: 2px;
+}
+
+.pallet-row td {
+    height: 22px;
+    border-bottom: 1px solid #dedede;
+    font-size: 7.5pt;
+}
+
+.pallet-label {
+    color: #111111;
+    text-align: left;
+    padding-left: 3px;
+}
+
+.pallet-row .item {
+    color: #111111;
+}
+
+.pallets-space {
+    color: #111111;
+}
+
+.received {
+    width: 12%;
+    border-left: 1px solid #cfcfcf;
+    height: 25px;
+    text-align: center;
+    padding-left: 3px;
+    padding-right: 3px;
+}
         .empty {
             text-align: center;
             padding: 20px;
@@ -300,7 +353,7 @@ define(['N/record', 'N/render', 'N/format', 'N/log', 'N/search'], (record, rende
         }
     </style>
 </head>
-<body size="Letter" margin="0.35in 0.35in 0.35in 0.35in">
+<body size="Letter" margin="0.25in 0.25in 0.25in 0.25in">
     <table class="report-title">
         <tr>
             <td align="center" style="text-align: center;">Receiving Report</td>
@@ -326,14 +379,14 @@ define(['N/record', 'N/render', 'N/format', 'N/log', 'N/search'], (record, rende
 
     <table>
         <thead>
-            <tr class="items-head">
-                <td class="po">PO</td>
-                <td class="vendor">Vendor</td>
-                <td class="item">Item</td>
-                <td class="description">Description</td>
-                <td class="qty" align="center">Quantity<br/>Expected</td>
-                <td class="received" align="center">Quantity<br/>Received</td>
-            </tr>
+<tr class="items-head">
+    <td class="vendor">Vendor</td>
+    <td class="item">Item</td>
+    <td class="description">Description</td>
+    <td class="qty" align="center">Qty</td>
+    <td class="um" align="center">UM</td>
+    <td class="received" align="center">Total Quantity<br/>Received</td>
+</tr>
         </thead>
         <tbody class="items-body">
             ${buildRows(rec)}

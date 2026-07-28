@@ -1030,7 +1030,27 @@ log.debug({
         setSublistValueSafe(sublist, FLD_CURRENCY, index, order.currency);
     });
 }
-  
+
+function getUniqueOrdersById(orders) {
+    const seen = {};
+    const uniqueOrders = [];
+
+    (orders || []).forEach(order => {
+        if (!order || !order.id) {
+            return;
+        }
+
+        if (seen[order.id]) {
+            return;
+        }
+
+        seen[order.id] = true;
+        uniqueOrders.push(order);
+    });
+
+    return uniqueOrders;
+}
+
 function setSublistValueSafe(sublist, fieldId, line, value) {
     if (value !== null && value !== undefined && value !== '') {
         sublist.setSublistValue({
@@ -1267,10 +1287,17 @@ const soSearch = search.create({
         return true;
     });
 
-let finalResults = results;
+/*
+ * De-dupe the grouped transaction search results.
+ * The search is line-level because mainline = F, so one Sales Order can appear
+ * more than once when multiple item lines match the criteria.
+ */
+let finalResults = getUniqueOrdersById(results);
+
+const uniqueOrderIds = finalResults.map(order => order.id);
 
 if ((params.custpage_availability_filter || 'SOME_COMMITTED') === 'ALL_FULLY_COMMITTED') {
-    const fullyCommittedMap = getFullyCommittedOrderMap(orderIds);
+    const fullyCommittedMap = getFullyCommittedOrderMap(uniqueOrderIds);
 
     finalResults = finalResults.filter(order => {
         return fullyCommittedMap[order.id] === true;

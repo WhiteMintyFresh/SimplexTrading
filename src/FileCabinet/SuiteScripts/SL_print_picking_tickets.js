@@ -37,6 +37,7 @@ const PICKER_LIST_ID = 'customlist_truck_driver_list';
 const TRUCK_LIST_ID = 'customlist_truck_fulfillment';
 
 const customListTextCache = {};
+const vendorItemCodeCache = {};
 
 // Create this Sales Order body checkbox.
 const DEFAULT_PRINTED_FIELD_ID = 'custbody_picking_ticket_printed';
@@ -486,15 +487,6 @@ function addCustomBodyFieldOptionsFromSalesOrders(options) {
                 .center {
                     text-align: center;
                 }
-
-                .pt-bottom-buttons {
-                    margin-top: 10px;
-                }
-
-                .pt-bottom-buttons button {
-                    margin-right: 8px;
-                    padding: 5px 12px;
-                }
             </style>
 
             <div class="pt-wrapper">
@@ -517,12 +509,6 @@ function addCustomBodyFieldOptionsFromSalesOrders(options) {
                         ${rows}
                     </tbody>
                 </table>
-            </div>
-
-            <div class="pt-bottom-buttons">
-                <button type="button" onclick="printPickingTickets()">Print</button>
-                <button type="button" onclick="markAllPickingTickets()">Mark All</button>
-                <button type="button" onclick="unmarkAllPickingTickets()">Unmark All</button>
             </div>
         `;
     }
@@ -627,10 +613,11 @@ const order = {
     customer: soRec.getText({ fieldId: 'entity' }) || '',
     shipTo: cleanPdfAddress(soRec.getValue({ fieldId: 'shipaddress' }) || ''),
     shipVia: soRec.getText({ fieldId: 'shipmethod' }) || '',
-    location: soRec.getText({ fieldId: 'location' }) || '',
-    picker: getLookupSelectText(lookup, SO_FIELD_PICKER),
-    truck: getLookupSelectText(lookup, SO_FIELD_TRUCK),
-    lines: []
+location: soRec.getText({ fieldId: 'location' }) || '',
+picker: getLookupSelectText(lookup, SO_FIELD_PICKER),
+truck: getLookupSelectText(lookup, SO_FIELD_TRUCK),
+fulfillmentNumbers: getItemFulfillmentNumbers(salesOrderId),
+lines: []
 };
 
     const lineCount = soRec.getLineCount({
@@ -658,11 +645,19 @@ const order = {
             continue;
         }
 
-        const code = soRec.getSublistText({
-            sublistId: 'item',
-            fieldId: 'item',
-            line: i
-        }) || '';
+const itemId = soRec.getSublistValue({
+    sublistId: 'item',
+    fieldId: 'item',
+    line: i
+});
+
+const code = soRec.getSublistText({
+    sublistId: 'item',
+    fieldId: 'item',
+    line: i
+}) || '';
+
+const vendorItemCode = getVendorItemCode(itemId, itemType);
 
         const description =
             soRec.getSublistValue({
@@ -709,20 +704,21 @@ const order = {
          */
         const qtyToPrint = quantityCommitted > 0 ? quantityCommitted : qtyRemaining;
 
-        order.lines.push({
-            code: code,
-            description: description,
-            quantity: qtyRemaining,
-            committed: quantityCommitted,
-            pickQty: qtyToPrint,
-            units: units,
-            onHand: quantityAvailable || '',
-            location: soRec.getSublistText({
-                sublistId: 'item',
-                fieldId: 'location',
-                line: i
-            }) || order.location
-        });
+order.lines.push({
+    code: code,
+    vendorItemCode: vendorItemCode,
+    description: description,
+    quantity: qtyRemaining,
+    committed: quantityCommitted,
+    pickQty: qtyToPrint,
+    units: units,
+    onHand: quantityAvailable || '',
+    location: soRec.getSublistText({
+        sublistId: 'item',
+        fieldId: 'location',
+        line: i
+    }) || order.location
+});
     }
 
     log.debug({
@@ -738,6 +734,129 @@ const order = {
 });
 
     return order;
+}
+
+function getVendorItemCode(itemId, itemType) {
+    if (!itemId) {
+        return '';
+    }
+
+    const cacheKey = String(itemType || '') + ':' + String(itemId);
+
+    if (
+        Object.prototype.hasOwnProperty.call(
+            vendorItemCodeCache,
+            cacheKey
+        )
+    ) {
+        return vendorItemCodeCache[cacheKey];
+    }
+
+    let searchType;
+
+    switch (itemType) {
+        case 'InvtPart':
+            searchType = search.Type.INVENTORY_ITEM;
+            break;
+
+        case 'Assembly':
+            searchType = search.Type.ASSEMBLY_ITEM;
+            break;
+
+        case 'NonInvtPart':
+            searchType = search.Type.NON_INVENTORY_ITEM;
+            break;
+
+        case 'Service':
+            searchType = search.Type.SERVICE_ITEM;
+            break;
+
+        case 'OthCharge':
+            searchType = search.Type.OTHER_CHARGE_ITEM;
+            break;
+
+        default:
+            vendorItemCodeCache[cacheKey] = '';
+            return '';
+    }
+
+    try {
+        const itemData = search.lookupFields({
+            type: searchType,
+            id: itemId,
+            columns: ['vendorname']
+        });
+
+        const vendorItemCode = String(
+            itemData.vendorname || ''
+        );
+
+        vendorItemCodeCache[cacheKey] = vendorItemCode;
+
+        return vendorItemCode;
+    } catch (e) {
+        log.error({
+            title: 'Unable to retrieve Vendor Item Code',
+            details: {
+                itemId: itemId,
+                itemType: itemType,
+                error: e
+            }
+        });
+
+        vendorItemCodeCache[cacheKey] = '';
+
+        return '';
+    }
+}
+
+function getItemFulfillmentNumbers(salesOrderId) {
+    const fulfillmentNumbers = [];
+
+    try {
+        search.create({
+            type: search.Type.ITEM_FULFILLMENT,
+            filters: [
+                ['mainline', 'is', 'T'],
+                'AND',
+                ['createdfrom', 'anyof', salesOrderId],
+                'AND',
+                ['voided', 'is', 'F']
+            ],
+            columns: [
+                search.createColumn({
+                    name: 'trandate',
+                    sort: search.Sort.ASC
+                }),
+                search.createColumn({
+                    name: 'tranid',
+                    sort: search.Sort.ASC
+                })
+            ]
+        }).run().each(result => {
+            const fulfillmentNumber = result.getValue({
+                name: 'tranid'
+            });
+
+            if (
+                fulfillmentNumber &&
+                fulfillmentNumbers.indexOf(String(fulfillmentNumber)) === -1
+            ) {
+                fulfillmentNumbers.push(String(fulfillmentNumber));
+            }
+
+            return true;
+        });
+    } catch (e) {
+        log.error({
+            title:
+                'Unable to retrieve Item Fulfillment numbers for Sales Order ' +
+                salesOrderId,
+            details: e
+        });
+    }
+
+    return fulfillmentNumbers.join(', ');
 }
 
 function getCustomListText(listScriptId, internalId) {
@@ -830,26 +949,83 @@ function cleanPdfAddress(value) {
 
     function buildSinglePickingTicketPdf(order, logoUrl) {
     const lines = order.lines.map(line => `
-        <tr>
-            <td class="line-cell code-cell">${xmlEscape(line.code)}</td>
-            <td class="line-cell desc-cell">${xmlEscape(line.description)}</td>
-            <td class="line-cell qty-cell">${formatQty(line.pickQty)}</td>
-            <td class="line-cell unit-cell">${xmlEscape(line.units)}</td>
-            <td class="line-cell-last onhand-cell">${formatQty(line.onHand)}</td>
+    <tr>
+        <td class="code-column">
+            ${xmlEscape(line.code)}
+        </td>
+
+        <td class="vendor-item-column">
+            ${xmlEscape(line.vendorItemCode)}
+        </td>
+
+        <td class="description-column">
+            ${xmlEscape(line.description)}
+        </td>
+
+            <td class="quantity-column">
+                ${formatQty(line.pickQty)}
+            </td>
+
+            <td class="unit-column">
+                ${xmlEscape(line.units)}
+            </td>
+
+            <td class="picked-column">
+                &nbsp;
+            </td>
+
+            <td class="onhand-column last-cell">
+                ${formatQty(line.onHand)}
+            </td>
         </tr>
     `).join('');
 
-    // fewer filler rows so the table area stays large without pushing content too low
-    const fillerRows = buildBlankRows(Math.max(8 - order.lines.length, 0));
+    const blankRows = '';
 
     const logoHtml = logoUrl
-        ? `<img src="${xmlEscape(logoUrl)}" style="width:190px;height:48px;" />`
-        : `<span style="font-size:20pt;font-weight:bold;color:#174f7a;">SIMPLEX</span><br/>
-           <span style="font-size:6pt;letter-spacing:1px;color:#666666;">TRADING CO. LTD.</span>`;
+        ? `
+            <img
+                src="${xmlEscape(logoUrl)}"
+                style="width:155px;height:39px;"
+            />
+        `
+        : `
+            <span style="font-size:17pt;font-weight:bold;color:#174f7a;">
+                SIMPLEX
+            </span>
+            <br/>
+            <span style="font-size:6pt;letter-spacing:1px;color:#666666;">
+                TRADING CO. LTD.
+            </span>
+        `;
 
     return `
         <pdf>
             <head>
+                <macrolist>
+                    <macro id="ticketFooter">
+                        <table class="footer-table">
+                            <tr>
+                                <td style="width:30%;">
+                                    <barcode
+                                        codetype="code128"
+                                        showtext="true"
+                                        value="${xmlEscape(order.number)}"
+                                    />
+                                </td>
+
+                                <td style="width:40%;">
+                                    &nbsp;
+                                </td>
+
+                                <td style="width:30%;text-align:right;">
+                                    <pagenumber/> of <totalpages/>
+                                </td>
+                            </tr>
+                        </table>
+                    </macro>
+                </macrolist>
+
                 <style>
                     body {
                         font-family: Helvetica, Arial, sans-serif;
@@ -860,253 +1036,299 @@ function cleanPdfAddress(value) {
                     table {
                         width: 100%;
                         border-collapse: collapse;
+                        table-layout: fixed;
                     }
 
-                    .date-order td {
+                    td {
+                        padding: 0;
+                    }
+
+                    .date-order-table {
                         border: 0.75px solid #222222;
-                        padding: 4px;
                     }
 
-                    .date-order-label {
+                    .date-order-table td {
+                        border-right: 0.75px solid #222222;
+                        padding: 3px;
+                    }
+
+                    .date-order-table td.last-date-cell {
+                        border-right: none;
+                    }
+
+                    .date-order-header td {
+                        border-bottom: 0.75px solid #222222;
                         font-size: 7pt;
                         font-weight: bold;
                     }
 
-                    .date-order-value {
+                    .date-order-value td {
                         font-size: 8pt;
-                    }
-
-                    .title-single {
-                        font-size: 16pt;
-                        font-weight: bold;
-                        letter-spacing: 0.5px;
-                        text-align: center;
-                        white-space: nowrap;
                     }
 
                     .ship-box {
                         border: 0.75px solid #222222;
-                        padding: 5px;
-                        height: 68px;
+                        padding: 4px;
+                        height: 58px;
                         vertical-align: top;
                     }
 
-                    .label {
-                        font-size: 9pt;
+                    .ship-label {
+                        font-size: 8pt;
                         font-weight: bold;
                     }
 
-                    .address {
+                    .ship-address {
                         font-size: 8pt;
                         line-height: 10pt;
                     }
 
-                    .assignment-title {
+                    .assignment-label {
+                        padding-bottom: 2px;
                         font-size: 8pt;
                         font-weight: bold;
                         text-align: center;
-                        padding-bottom: 2px;
                     }
 
                     .assignment-value {
+                        border: 0.75px solid #222222;
+                        padding: 3px;
+                        height: 14px;
                         font-size: 8pt;
                         text-align: center;
-                        border: 0.75px solid #222222;
-                        padding: 4px;
-                        height: 14px;
                     }
 
-                    .line-table {
-                        width: 100%;
+                    .item-table {
                         border: 0.75px solid #222222;
                     }
 
-                    .line-table th {
+                    .item-table th {
                         border-right: 0.75px solid #222222;
                         border-bottom: 0.75px solid #222222;
-                        padding: 5px;
-                        font-size: 8.5pt;
+                        padding: 5px 4px;
+                        font-size: 8pt;
                         font-weight: bold;
                         text-align: left;
+                        vertical-align: middle;
                     }
 
-                    .line-table th.last-header {
+                    .item-table th.last-header {
                         border-right: none;
                     }
 
-                    .line-cell {
-                        border-right: 0.75px solid #222222;
-                        padding: 4px;
-                        height: 16px;
-                        vertical-align: top;
+.item-table td {
+    border-right: 0.75px solid #222222;
+    padding: 4px;
+    font-size: 8pt;
+    vertical-align: top;
+}
+
+                    .item-table td.last-cell {
+                        border-right: none;
+                    }
+
+.code-column {
+    width: 12%;
+}
+
+.vendor-item-column {
+    width: 14%;
+}
+
+.description-column {
+    width: 28%;
+}
+
+.quantity-column {
+    width: 7%;
+    text-align: right;
+}
+
+.unit-column {
+    width: 8%;
+    text-align: center;
+}
+
+.picked-column {
+    width: 14%;
+    text-align: center;
+}
+
+.onhand-column {
+    width: 17%;
+    text-align: right;
+}
+
+                    .footer-table td {
+                        padding: 0;
                         font-size: 8pt;
-                    }
-
-                    .line-cell-last {
-                        padding: 4px;
-                        height: 16px;
-                        vertical-align: top;
-                        font-size: 8pt;
-                    }
-
-                    .blank-cell {
-                        border-right: 0.75px solid #222222;
-                        padding: 4px;
-                        height: 16px;
-                    }
-
-                    .blank-cell-last {
-                        padding: 4px;
-                        height: 16px;
-                    }
-
-                    .code-cell {
-                        width: 14%;
-                    }
-
-                    .desc-cell {
-                        width: 40%;
-                    }
-
-                    .qty-cell {
-                        width: 9%;
-                        text-align: right;
-                    }
-
-                    .unit-cell {
-                        width: 11%;
-                        text-align: center;
-                    }
-
-                    .onhand-cell {
-                        width: 26%;
-                        text-align: right;
+                        vertical-align: bottom;
                     }
                 </style>
             </head>
 
-            <body size="Letter" margin="0.28in">
+            <body
+                footer="ticketFooter"
+                footer-height="32pt"
+                padding="0.28in"
+                size="Letter"
+            >
 
+                <!-- Logo and Date / Order -->
                 <table>
                     <tr>
-                        <td style="width:34%; vertical-align:middle;">
+                        <td style="width:64%;vertical-align:top;">
                             ${logoHtml}
                         </td>
 
-                        <td style="width:4%;"></td>
-
-                        <td style="width:36%; vertical-align:middle; text-align:center;">
-                            <span class="title-single">PICKING TICKET</span>
+                        <td style="width:2%;">
+                            &nbsp;
                         </td>
 
-                        <td style="width:4%;"></td>
+                        <td style="width:34%;vertical-align:top;">
+                            <table class="date-order-table">
+                                <tr class="date-order-header">
+                                    <td style="width:50%;">
+                                        DATE
+                                    </td>
 
-                        <td style="width:22%; vertical-align:top;">
-                            <table class="date-order">
-                                <tr>
-                                    <td class="date-order-label">DATE</td>
-                                    <td class="date-order-label">ORDER #</td>
+                                    <td
+                                        class="last-date-cell"
+                                        style="width:50%;"
+                                    >
+                                        ORDER #
+                                    </td>
                                 </tr>
-                                <tr>
-                                    <td class="date-order-value">${xmlEscape(order.date)}</td>
-                                    <td class="date-order-value">${xmlEscape(order.number)}</td>
+
+                                <tr class="date-order-value">
+                                    <td>
+                                        ${xmlEscape(order.date)}
+                                    </td>
+
+                                    <td class="last-date-cell">
+                                        ${xmlEscape(order.number)}
+                                    </td>
                                 </tr>
                             </table>
                         </td>
                     </tr>
                 </table>
 
-                <br/>
+                <div style="height:5px;">
+                    &nbsp;
+                </div>
 
+                <!-- Ship To, Picker and Truck -->
                 <table>
                     <tr>
-                        <td style="width:46%;" class="ship-box">
-                            <span class="label">SHIP TO:</span><br/>
-                            <span class="address">
-                                ${xmlEscape(order.customer)}<br/>
+                        <td
+                            class="ship-box"
+                            style="width:46%;"
+                        >
+                            <span class="ship-label">
+                                SHIP TO:
+                            </span>
+                            <br/>
+
+                            <span class="ship-address">
+                                ${xmlEscape(order.customer)}
+                                <br/>
                                 ${xmlEscape(order.shipTo).replace(/\n/g, '<br/>')}
                             </span>
                         </td>
 
-                        <td style="width:14%;"></td>
+                        <td style="width:14%;">
+                            &nbsp;
+                        </td>
 
-                        <td style="width:16%; vertical-align:bottom;">
+                        <td style="width:16%;vertical-align:bottom;">
                             <table>
                                 <tr>
-                                    <td class="assignment-title">PICKER</td>
+                                    <td class="assignment-label">
+                                        PICKER
+                                    </td>
                                 </tr>
+
                                 <tr>
-                                    <td class="assignment-value">${xmlEscape(order.picker)}</td>
+                                    <td class="assignment-value">
+                                        ${xmlEscape(order.picker) || '&nbsp;'}
+                                    </td>
                                 </tr>
                             </table>
                         </td>
 
-                        <td style="width:4%;"></td>
+                        <td style="width:4%;">
+                            &nbsp;
+                        </td>
 
-                        <td style="width:16%; vertical-align:bottom;">
+                        <td style="width:16%;vertical-align:bottom;">
                             <table>
                                 <tr>
-                                    <td class="assignment-title">TRUCK</td>
+                                    <td class="assignment-label">
+                                        TRUCK
+                                    </td>
                                 </tr>
+
                                 <tr>
-                                    <td class="assignment-value">${xmlEscape(order.truck)}</td>
+                                    <td class="assignment-value">
+                                        ${xmlEscape(order.truck) || '&nbsp;'}
+                                    </td>
                                 </tr>
                             </table>
                         </td>
 
-                        <td style="width:4%;"></td>
+                        <td style="width:4%;">
+                            &nbsp;
+                        </td>
                     </tr>
                 </table>
 
-                <br/>
+                <div style="height:10px;">
+                    &nbsp;
+                </div>
 
-                <table class="line-table">
+                <!-- Item Lines -->
+                <table class="item-table">
                     <thead>
                         <tr>
-                            <th style="width:14%;">CODE</th>
-                            <th style="width:40%;">DESCRIPTION</th>
-                            <th style="width:9%; text-align:right;">QTY</th>
-                            <th style="width:11%; text-align:center;">UNIT</th>
-                            <th class="last-header" style="width:26%; text-align:right;">ON HAND</th>
+<th class="code-column">
+    CODE
+</th>
+
+<th class="vendor-item-column">
+    VEN ITEM
+</th>
+
+<th class="description-column">
+    DESCRIPTION
+</th>
+
+                            <th class="quantity-column">
+                                QTY
+                            </th>
+
+                            <th class="unit-column">
+                                UNIT
+                            </th>
+
+                            <th class="picked-column">
+                                PICKED
+                            </th>
+
+                            <th class="onhand-column last-header">
+                                ON HAND
+                            </th>
                         </tr>
                     </thead>
-                    <tbody>
-                        ${lines}
-                        ${fillerRows}
-                    </tbody>
-                </table>
 
-                <br/>
-
-                <table style="width:120px;">
-                    <tr>
-                        <td style="text-align:center;">
-                            <barcode codetype="code128" showtext="true" value="${xmlEscape(order.number)}" />
-                        </td>
-                    </tr>
+<tbody>
+    ${lines}
+</tbody>
                 </table>
 
             </body>
         </pdf>
     `;
-}
-
-function buildBlankRows(count) {
-    let rows = '';
-
-    for (let i = 0; i < count; i++) {
-        rows += `
-            <tr>
-                <td class="blank-cell">&nbsp;</td>
-                <td class="blank-cell">&nbsp;</td>
-                <td class="blank-cell">&nbsp;</td>
-                <td class="blank-cell">&nbsp;</td>
-                <td class="blank-cell-last">&nbsp;</td>
-            </tr>
-        `;
-    }
-
-    return rows;
 }
 
 

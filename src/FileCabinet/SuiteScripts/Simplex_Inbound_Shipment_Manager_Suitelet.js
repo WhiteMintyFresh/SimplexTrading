@@ -52,29 +52,41 @@ define([
         custrecord_shipping_code: 'customlist_shipping_code'
     };
 
-    const EDITABLE_FIELDS = [
-        { id: 'custrecord_shipping_line', label: 'Shipping Line', type: 'select' },
-        { id: 'custrecord_container_size', label: 'Container Size (ft)', type: 'text' },
-        { id: 'externaldocumentnumber', label: 'SN Number', type: 'text' },
-        { id: 'vesselnumber', label: 'Container Number', type: 'text' },
-        { id: 'expectedshippingdate', label: 'Expected Date of Delivery', type: 'date' },
-        { id: 'actualshippingdate', label: 'Actual Date of Delivery', type: 'date' },
-        { id: 'expecteddeliverydate', label: 'Expected Date of Arrival', type: 'date' },
-        { id: 'actualdeliverydate', label: 'Actual Date of Arrival', type: 'date' },
-        { id: 'custrecord_last_date', label: 'Last Day', type: 'date' },
-        { id: 'custrecord_dfl_status', label: 'DFL Status', type: 'select' },
-        { id: 'custrecord_vec_release', label: 'VEC Release', type: 'checkbox' },
-        { id: 'custrecord_container_stat', label: 'Container Status', type: 'select' },
-        { id: 'custrecord_customs_release_date', label: 'Customs Release Date', type: 'date' },
-        { id: 'billoflading', label: 'C No', type: 'text' },
-        { id: 'custrecord_shipping_code', label: 'Code', type: 'select' },
-        { id: 'custrecord_fas', label: 'FAS', type: 'checkbox' },
-        { id: 'custrecord_trucker_confirmation', label: 'Trucker Confirmation', type: 'checkbox' },
-        { id: 'custrecord_offloading_date', label: 'Offloading Date', type: 'datetime' },
-        { id: 'custrecord_t_no', label: 'T No', type: 'text' },
-        { id: 'custrecord_cont_return_date', label: 'Container Return Date', type: 'date' },
-        { id: 'shipmentmemo', label: 'Comments', type: 'textarea' }
-    ];
+const EDITABLE_FIELDS = [
+    { id: 'custrecord_shipping_line', label: 'Shipping Line', type: 'select' },
+
+    {
+        id: 'custrecord_container_size',
+        label: 'Size',
+        type: 'staticselect',
+        options: [
+            { id: '', text: '' },
+            { id: '40', text: '40' },
+            { id: '20', text: '20' },
+            { id: 'LCL', text: 'LCL' }
+        ]
+    },
+
+    { id: 'externaldocumentnumber', label: 'SN Number', type: 'text' },
+
+    { id: 'actualshippingdate', label: 'Departure Date', type: 'date' },
+
+    { id: 'expecteddeliverydate', label: 'Expected Date of Arrival', type: 'date' },
+    { id: 'actualdeliverydate', label: 'Actual Date of Arrival', type: 'date' },
+    { id: 'custrecord_last_date', label: 'Last Day', type: 'date' },
+    { id: 'custrecord_dfl_status', label: 'DFL Status', type: 'select' },
+    { id: 'custrecord_vec_release', label: 'VEC Release', type: 'checkbox' },
+    { id: 'custrecord_container_stat', label: 'Container Status', type: 'select' },
+    { id: 'custrecord_customs_release_date', label: 'Customs Release Date', type: 'date' },
+    { id: 'billoflading', label: 'C No', type: 'text' },
+    { id: 'custrecord_shipping_code', label: 'Code', type: 'select' },
+    { id: 'custrecord_fas', label: 'FAS', type: 'checkbox' },
+    { id: 'custrecord_trucker_confirmation', label: 'Trucker Confirmation', type: 'checkbox' },
+    { id: 'custrecord_offloading_date', label: 'Offloading Date', type: 'datetime' },
+    { id: 'custrecord_t_no', label: 'T No', type: 'text' },
+    { id: 'custrecord_cont_return_date', label: 'Container Return Date', type: 'date' },
+    { id: 'shipmentmemo', label: 'Comments', type: 'textarea' }
+];
 
     function onRequest(context) {
         try {
@@ -250,6 +262,25 @@ const expectedArrival = shipmentRecord.getValue({
     fieldId: 'expecteddeliverydate'
 });
 
+/*
+ * Business rule:
+ *
+ * Keep the inbound shipment visible regardless of whether it has been
+ * received or closed.
+ *
+ * Remove it from this Suitelet only after the Container Return Date
+ * has been entered and saved.
+ */
+const containerReturnDate = shipmentRecord.getValue({
+    fieldId: 'custrecord_cont_return_date'
+});
+
+const shouldHideShipment = Boolean(containerReturnDate);
+
+if (shouldHideShipment) {
+    return true;
+}
+
 if (!matchesInboundFilters({
     shipmentNumber: shipmentNumber,
     snNumber: snNumber,
@@ -298,6 +329,7 @@ if (!matchesInboundFilters({
 rows.push({
     id: shipmentId,
     shipmentNumber: shipmentNumber,
+    containerNumber: containerNumber,
     values: values,
     items: shipmentItems
 });
@@ -644,7 +676,7 @@ return `
     <tr class="shipment-row"
         data-shipment-id="${escapeHtml(shipment.id)}">
 
-        <td class="center">
+        <td class="center sticky-col sticky-expand">
             <button
                 type="button"
                 class="expand-btn"
@@ -656,26 +688,38 @@ return `
             </button>
         </td>
 
-        <td class="center">
+        <td class="center sticky-col sticky-save">
             <input type="checkbox"
                    class="save-check"
                    data-shipment-id="${escapeHtml(shipment.id)}">
         </td>
-                    <td>
-                        <a href="${escapeHtml(recordUrl)}" target="_blank">
-                            ${escapeHtml(shipment.shipmentNumber)}
-                        </a>
-                    </td>
+<td class="sticky-col sticky-shipment">
+    <a href="${escapeHtml(recordUrl)}" target="_blank">
+        ${escapeHtml(shipment.shipmentNumber)}
+    </a>
+</td>
 
-                    <td class="center">
-                        <a
-                            class="print-report-btn"
-                            href="${escapeHtml(receivingReportUrl)}"
-                            target="_blank"
-                            rel="noopener noreferrer">
-                            Print
-                        </a>
-                    </td>
+<td class="sticky-col sticky-container">
+    <input
+        type="text"
+        class="shipment-input container-number-input"
+        data-shipment-id="${escapeHtml(shipment.id)}"
+        data-field-id="vesselnumber"
+        data-field-type="text"
+        data-original-value="${escapeHtml(shipment.containerNumber || '')}"
+        value="${escapeHtml(shipment.containerNumber || '')}">
+</td>
+
+<td class="center">
+    <a
+        class="print-report-btn"
+        href="${escapeHtml(receivingReportUrl)}"
+        target="_blank"
+        rel="noopener noreferrer">
+        Print
+    </a>
+</td>
+
 ${editableCells}
 </tr>
 
@@ -683,7 +727,7 @@ ${editableCells}
     class="shipment-items-row"
     style="display:none;">
 
-    <td colspan="${EDITABLE_FIELDS.length + 4}">
+    <td colspan="${EDITABLE_FIELDS.length + 5}">
         ${buildInboundItemsTable(shipment.items || [])}
     </td>
 </tr>
@@ -692,7 +736,52 @@ ${editableCells}
 
         return `
             <style>
-                .shipment-page {
+            .sticky-col {
+    position: sticky;
+    background: #ffffff !important;
+    z-index: 6;
+}
+
+.shipment-grid th.sticky-col {
+    z-index: 8;
+    background: #f5f5f5 !important;
+}
+
+.sticky-expand {
+    left: 0;
+    width: 36px;
+    min-width: 36px;
+    max-width: 36px;
+}
+
+.sticky-save {
+    left: 36px;
+    width: 52px;
+    min-width: 52px;
+    max-width: 52px;
+}
+
+.sticky-shipment {
+    left: 88px;
+    width: 95px;
+    min-width: 95px;
+    max-width: 95px;
+}
+
+.sticky-container {
+    left: 183px;
+    width: 135px;
+    min-width: 135px;
+    max-width: 135px;
+    box-shadow: 2px 0 3px rgba(0,0,0,0.08);
+}
+
+.container-number-input {
+    width: 120px !important;
+    min-width: 120px !important;
+}
+
+            .shipment-page {
                     width:calc(100vw - 32px);
                     max-width:calc(100vw - 32px);
                     margin:10px 0 0 -6px;
@@ -760,18 +849,41 @@ ${editableCells}
                     background:#eef6fb;
                 }
 
-                .shipment-grid input[type="text"],
-                .shipment-grid input[type="date"],
-                .shipment-grid input[type="datetime-local"],
-                .shipment-grid select {
-                    width:155px;
-                    min-width:155px;
+.shipment-grid input[type="text"],
+.shipment-grid input[type="date"],
+.shipment-grid input[type="datetime-local"],
+.shipment-grid select {
+    width:125px;
+    min-width:125px;
                     height:24px;
                     box-sizing:border-box;
                     border:1px solid #b7b7b7;
                     background:#fff;
                     font-size:12px;
                 }
+
+.shipment-input[data-field-id="custrecord_container_size"] {
+    width:65px !important;
+    min-width:65px !important;
+}
+
+.shipment-input[data-field-id="custrecord_vec_release"],
+.shipment-input[data-field-id="custrecord_fas"],
+.shipment-input[data-field-id="custrecord_trucker_confirmation"] {
+    width:auto !important;
+    min-width:auto !important;
+}
+
+.shipment-input[data-field-id="custrecord_t_no"],
+.shipment-input[data-field-id="billoflading"] {
+    width:95px !important;
+    min-width:95px !important;
+}
+
+.shipment-input[data-field-id="shipmentmemo"] {
+    width:180px !important;
+    min-width:180px !important;
+}
 
                 .shipment-grid textarea {
                     width:230px;
@@ -887,9 +999,10 @@ ${editableCells}
                     <table class="shipment-grid">
                         <thead>
                             <tr>
-<th></th>
-<th>Save</th>
-<th>Shipment Number</th>
+<th class="sticky-col sticky-expand"></th>
+<th class="sticky-col sticky-save">Save</th>
+<th class="sticky-col sticky-shipment">Shipment #</th>
+<th class="sticky-col sticky-container">Container #</th>
 <th>Print</th>
 ${headers}
                             </tr>
@@ -897,7 +1010,7 @@ ${headers}
                         <tbody>
                             ${rows || `
                                 <tr>
-                                    <td colspan="${EDITABLE_FIELDS.length + 4}"
+                                    <td colspan="${EDITABLE_FIELDS.length + 5}"
                                         style="padding:14px;text-align:center;">
                                         No inbound shipments found.
                                     </td>
@@ -1067,6 +1180,13 @@ ${headers}
 
             case 'textarea':
                 return `<textarea ${common}>${escapeHtml(rawValue)}</textarea>`;
+
+case 'staticselect':
+    return `
+        <select ${common}>
+            ${buildOptions(field.options || [], rawValue)}
+        </select>
+    `;
 
             case 'select':
                 if (options.length > 1) {
@@ -1354,6 +1474,16 @@ payload.push({
             isDynamic: false
         });
 
+if (
+    update.values &&
+    Object.prototype.hasOwnProperty.call(update.values, 'vesselnumber')
+) {
+    shipment.setValue({
+        fieldId: 'vesselnumber',
+        value: String(update.values.vesselnumber || '')
+    });
+}
+
         EDITABLE_FIELDS.forEach((field) => {
             if (
                 !update.values ||
@@ -1385,8 +1515,9 @@ payload.push({
             case 'datetime':
                 return rawValue ? parseIsoDateTime(String(rawValue)) : null;
 
-            case 'select':
-                return rawValue ? String(rawValue) : '';
+case 'select':
+case 'staticselect':
+    return rawValue ? String(rawValue) : '';
 
             default:
                 return rawValue === null || rawValue === undefined
